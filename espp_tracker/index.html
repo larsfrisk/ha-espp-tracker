@@ -109,6 +109,18 @@
       <div class="bar"><h2>Innehav</h2><a class="btn" href="#/add">+ Lägg till aktie/fond</a></div>
       <div class="tablewrap" id="otable"></div>
     </section>
+    <section class="card">
+      <div class="bar">
+        <h2>Inställningar</h2>
+      </div>
+      <div class="bar">
+        <div>Upplösning i dagsdiagrammet (Idag)<div class="sub">Vid 1 minut hämtas och uppdateras kursen varje minut under börsens öppettider. Yahoo fördröjer ofta svenska kurser ca 15 min.</div></div>
+        <div class="seg" id="ivseg" role="group" aria-label="Upplösning dagsdiagram">
+          <button data-iv="1m">1 min</button><button data-iv="5m">5 min</button><button data-iv="15m">15 min</button>
+        </div>
+      </div>
+      <div class="banner err" id="iverr" hidden></div>
+    </section>
     <section class="card" id="ochartcard">
       <div class="bar">
         <h2>Portföljens värde över tid</h2>
@@ -309,6 +321,8 @@ function renderOverview() {
         <td class="${cls(h.day_change)}">${arrow(h.day_change)} ${sgn(h.day_change)}<div class="sub">${pct(h.day_pct)}</div></td>
         <td class="${cls(h.gain)}">${arrow(h.gain)} ${sgn(h.gain)}<div class="sub">${pct(h.gain_pct)}</div></td></tr>`;
     }).join("") + `</tbody></table>` : "";
+  const iv = ["1m", "5m"].includes(p.config.intraday_interval) ? p.config.intraday_interval : "15m";
+  document.querySelectorAll("#ivseg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.iv === iv));
   $("ochartcard").hidden = !any;
   drawOverviewChart();
 }
@@ -535,6 +549,15 @@ $("ranges").addEventListener("click", async e => {
   document.querySelectorAll("#ranges button").forEach(x => x.setAttribute("aria-pressed", x === b));
   if (range === -1 && !(state.intraday && state.intraday.points)) await loadIntraday();
   drawHoldingChart(); renderHistTable();
+});
+$("ivseg").addEventListener("click", async e => {
+  const b = e.target.closest("button"); if (!b) return;
+  const err = $("iverr"); err.hidden = true;
+  try {
+    await postJson("api/settings", {intraday_interval: b.dataset.iv});
+    portfolio.config.intraday_interval = b.dataset.iv; if (state) state.intraday = null;
+    document.querySelectorAll("#ivseg button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  } catch (x) { err.textContent = x.message; err.hidden = false; }
 });
 $("oranges").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;

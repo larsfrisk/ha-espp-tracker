@@ -73,6 +73,18 @@ def load_config():
     return cfg
 
 
+def save_setting(key, value):
+    """Sparar en inställning från gränssnittet i config.json (övriga nycklar lämnas orörda)."""
+    if key == "intraday_interval":
+        if value not in INTERVALS:
+            raise ValueError("Ogiltig upplösning (välj 1m, 5m eller 15m)")
+    else:
+        raise ValueError("Okänd inställning")
+    conf = _read_json(CONFIG_FILE, {})
+    conf[key] = value
+    _write_json(CONFIG_FILE, conf)
+
+
 def _slug(text):
     t = text.lower().replace("å", "a").replace("ä", "a").replace("ö", "o")
     return re.sub(r"[^a-z0-9]+", "-", t).strip("-")[:24].strip("-") or "aktie"
@@ -814,6 +826,14 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError as e:
                     return self._send(400, {"error": str(e)})
             return self._send(201, {"ok": True})
+        if self.path == "/api/settings":
+            with LOCK:
+                try:
+                    for k, v in body.items():
+                        save_setting(k, v)
+                except ValueError as e:
+                    return self._send(400, {"error": str(e)})
+            return self._send(200, {"intraday_interval": intraday_interval(load_config())})
         m = re.match(r"^/api/holdings/([a-z0-9_-]+)/name$", self.path)
         if m:
             name = str(body.get("name") or "").strip()[:60]

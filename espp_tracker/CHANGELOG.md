@@ -4,6 +4,11 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [2.3.0] - 2026-11-24
+
+### Tillagt
+- Inställning på huvudsidan (Översikt): välj upplösning i dagsdiagrammet, 1, 5 eller 15 minuter. Ingen JSON-fil behöver redigeras längre.
+
 ## [2.2.0] - 2026-11-24
 
 ### Tillagt

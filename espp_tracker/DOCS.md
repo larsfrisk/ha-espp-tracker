@@ -24,8 +24,7 @@ Köp och sälj läggs in som vanligt (antal andelar och belopp). Fonder har inge
 Historiken (stängningskurser från ditt första köp) hämtas en gång per dag kl 16:30, efter att Tokyo-börsen
 stängt och ECB publicerat dagens valutakurser. Vyn **Idag** på en aktie visar senaste handelsdag med
 15 minuters upplösning. Knappen "Hämta kurser nu" tvingar fram en hämtning.
-Tiden kan ändras med `update_time` i `/data/config.json`. Upplösningen i vyn Idag styrs av `intraday_interval`
-(`"1m"`, `"5m"` eller `"15m"`, standard `"15m"`). Observera att Yahoo ofta fördröjer svenska kurser ca 15 minuter.
+Tiden kan ändras med `update_time` i `/data/config.json`. Upplösningen i vyn Idag (1, 5 eller 15 minuter, standard 15) väljer du under **Inställningar** på Översikt-sidan. Observera att Yahoo ofta fördröjer svenska kurser ca 15 minuter.
 
 ## Sensorer i Home Assistant
 

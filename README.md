@@ -5,7 +5,7 @@ valuta), orealiserad och realiserad vinst. Köp och försäljningar läggs in f�
 Vinst vid försäljning räknas med genomsnittsmetoden. Det är uppföljning, inte skatteunderlag.
 
 Kurser: Yahoo Finance (6501.T, JPY, inofficiellt API) och ECB-kurser via Frankfurter (JPY/SEK), hämtade
-en gång per dag (16:30 lokal tid). Diagrammet visar en avslutad stängningskurs per handelsdag.
+en gång per dag (16:30 lokal tid). Diagrammet visar en avslutad stängningskurs per handelsdag, och vyn "Idag" visar senaste handelsdag med 15 minuters upplösning.
 Appen loggar aldrig in hos din bank eller förvaltare och har ingen kontakt med JP Morgan.
 
 ## Installera i Home Assistant (HAOS/Supervised)

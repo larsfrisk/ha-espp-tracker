@@ -16,3 +16,5 @@ Sensorerna skapas när appen startar och uppdateras en gång per dag (kl 16:30, 
 du lagt in minst ett köp (utom kurs och växelkurs).
 
 Diagrammet har en punkt per handelsdag (avslutad stängningskurs). Tiden kan ändras med `update_time` i `/data/config.json`. Knappen "Hämta kurser nu" tvingar en hämtning.
+
+Vyn **Idag** visar senaste handelsdag med 15 minuters upplösning (kurs från Yahoo Finance, valuta fast på senaste ECB-kurs). Historiken hämtas hela vägen från ditt första köp.

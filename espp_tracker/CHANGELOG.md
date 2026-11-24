@@ -4,6 +4,16 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [1.2.0] - 2026-11-24
+
+### Tillagt
+- Intradagsvy "Idag" med 15 minuters upplösning: värdet av innehavet under senaste handelsdag mot föregående stängning. Under pågående handel uppdateras den automatiskt var 15:e minut medan sidan är öppen.
+- Intradagskurser hämtas när du öppnar vyn och sparas i 15 minuter under handel (60 minuter när börsen är stängd).
+
+### Ändrat
+- "Idag" är förvald i diagrammet. Historiken (1 mån till Allt) hämtas som tidigare i sin helhet från första köpet och uppdateras en gång per dag.
+- Intradagsdiagrammet använder senaste ECB-kurs hela dagen, eftersom valutakursen bara finns som dagskurs.
+
 ## [1.1.1] - 2026-11-24
 
 ### Tillagt

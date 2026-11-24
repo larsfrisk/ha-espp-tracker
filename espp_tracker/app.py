@@ -29,6 +29,7 @@ INGRESS = os.environ.get("ESPP_INGRESS") == "1"        # körs som Home Assistan
 INGRESS_PEER = "172.30.32.2"                           # Supervisorns ingress-gateway
 LOTS_FILE = os.path.join(DATA_DIR, "lots.json")
 CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
+INTRADAY_FILE = os.path.join(DATA_DIR, "intraday.json")
 CACHE_FILE = os.path.join(DATA_DIR, "cache.json")
 INDEX_FILE = os.path.join(BASE, "index.html")
 
@@ -302,11 +303,16 @@ def check_sequence(lots):
             raise ValueError("Det skulle innebära att du säljer fler aktier än du äger per %s" % l["date"])
 
 
+def _start(lots):
+    """Hämta historik från första köpet (med marginal)."""
+    first = min([dt.date.fromisoformat(l["date"]) for l in lots]) if lots else dt.date.today() - dt.timedelta(days=90)
+    return first - dt.timedelta(days=10)
+
+
 def build_summary():
     cfg = load_config()
     lots = load_lots()
-    start = (min([dt.date.fromisoformat(l["date"]) for l in lots]) if lots
-             else dt.date.today() - dt.timedelta(days=90)) - dt.timedelta(days=10)
+    start = _start(lots)
     prices, fx, meta, fetched_at, err = get_market(cfg, start)
     summ = compute(lots, cfg, prices, fx)
     return {
@@ -315,6 +321,80 @@ def build_summary():
         "summary": summ, "has_lots": bool(lots),
         "next_update": next_due(time.time(), cfg).isoformat(timespec="minutes"),
     }
+
+
+# ---------------------------------------------------------------- intradag (15 minuter)
+
+def fetch_intraday(symbol):
+    """Senaste handelsdagens 15-minutersstaplar från Yahoo Finance."""
+    url = "https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=15m&range=5d" % urllib.parse.quote(symbol)
+    res = _http_json(url)["chart"]["result"][0]
+    off = res["meta"].get("gmtoffset", 0)
+    reg = res["meta"].get("currentTradingPeriod", {}).get("regular", {})
+    days = {}
+    for ts, c in zip(res["timestamp"], res["indicators"]["quote"][0]["close"]):
+        if c is None:
+            continue
+        d = dt.datetime.fromtimestamp(ts + off, dt.timezone.utc).date().isoformat()
+        days.setdefault(d, []).append([ts, float(c)])
+    if not days:
+        raise ValueError("inga intradagsdata")
+    last = max(days)
+    live = bool(reg.get("start") and reg.get("end") and reg["start"] <= time.time() < reg["end"])
+    return {"date": last, "live": live, "points": sorted(days[last])}
+
+
+def demo_intraday(base_price):
+    rnd = random.Random(7)
+    start = dt.datetime.combine(dt.date.today(), dt.time(0, 0), dt.timezone.utc)   # 09:00 JST
+    p, pts = base_price * 0.99, []
+    for i in range(27):                                                            # till 15:30 JST
+        p *= math.exp(rnd.gauss(0.0003, 0.002))
+        pts.append([int(start.timestamp()) + i * 900, round(p, 1)])
+    return {"date": dt.date.today().isoformat(), "live": False, "points": pts, "fetched_at": time.time()}
+
+
+def get_intraday(cfg, last_close, refresh=False):
+    """(data, fel). 15 min cache under pågående handel, 60 min annars."""
+    if DEMO:
+        return demo_intraday(last_close), None
+    cache = _read_json(INTRADAY_FILE, {})
+    now = time.time()
+    same = cache.get("symbol") == cfg["symbol"] and bool(cache.get("points"))
+    if same and not refresh and now - cache.get("fetched_at", 0) < (900 if cache.get("live") else 3600):
+        return cache, None
+    try:
+        data = fetch_intraday(cfg["symbol"])
+        data.update({"symbol": cfg["symbol"], "fetched_at": now})
+        _write_json(INTRADAY_FILE, data)
+        return data, None
+    except Exception as e:
+        if same:
+            return cache, "Kunde inte hämta nya intradagskurser (%s). Visar senast sparade." % e
+        return None, "Kunde inte hämta intradagskurser: %s" % e
+
+
+def build_intraday(refresh=False):
+    cfg = load_config()
+    lots = load_lots()
+    prices, fx, _meta, _t, err = get_market(cfg, _start(lots))
+    base = {"points": [], "price_ccy": cfg["price_ccy"], "home_ccy": cfg["home_ccy"]}
+    if not prices:
+        return dict(base, error=err or "Inga kurser tillgängliga")
+    summ = compute(lots, cfg, prices, fx)
+    P = Series(prices)
+    rate = Series(fx).at(P.keys[-1]) if cfg["price_ccy"] != cfg["home_ccy"] else 1.0
+    shares = summ["shares"] if summ else 0.0
+    data, ierr = get_intraday(cfg, P.at(P.keys[-1]), refresh)
+    if not data:
+        return dict(base, error=ierr)
+    before = (dt.date.fromisoformat(data["date"]) - dt.timedelta(days=1)).isoformat()
+    base_price = P.at(before)
+    pts = [{"ts": ts, "t": dt.datetime.fromtimestamp(ts).strftime("%H:%M"), "price": p,
+            "value": shares * p * rate} for ts, p in data["points"]]
+    return dict(base, date=data["date"], live=data["live"], points=pts, shares=shares, fx=rate,
+                base_price=base_price, base_value=shares * base_price * rate,
+                error=ierr, fetched_at=dt.datetime.fromtimestamp(data["fetched_at"]).isoformat(timespec="seconds"))
 
 
 # ---------------------------------------------------------------- lot-validering
@@ -403,6 +483,9 @@ class Handler(BaseHTTPRequestHandler):
                     pass
             with LOCK:
                 return self._send(200, build_summary())
+        if path.path == "/api/intraday":
+            with LOCK:
+                return self._send(200, build_intraday(refresh=bool(urllib.parse.parse_qs(path.query).get("refresh"))))
         self._send(404, {"error": "Hittades inte"})
 
     def do_POST(self):

@@ -4,6 +4,15 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [2.4.0] - 2026-11-24
+
+### Tillagt
+- Nyckeltal och tekniska signaler på varje aktie- och fondsida: avkastning (1 dag till 12 månader), 52-veckors högsta/lägsta, volatilitet, största nedgång, medelvärden (SMA20/50/200) och RSI.
+- Sex regelbaserade "robothandelssignaler" (trend mot SMA200, SMA50/200-korsning, MACD, RSI, Bollingerband, 6 månaders momentum) som vägs ihop till en samlad signal: köpsignal, säljsignal eller neutral.
+- Backtest som visar hur tre enkla regler hade fungerat på kursens historia jämfört med att bara äga (utan courtage, skatt och utdelningar).
+- Kurshistorik på cirka tre år hämtas en gång per dag för beräkningarna.
+- Tydlig varning på sidan: signalerna är mekaniska regler, inte personlig investeringsrådgivning.
+
 ## [2.3.0] - 2026-11-24
 
 ### Tillagt

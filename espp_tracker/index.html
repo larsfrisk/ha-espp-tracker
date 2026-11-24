@@ -157,6 +157,11 @@
       <details><summary>Visa som tabell</summary><div class="tablewrap" id="histtable"></div></details>
     </section>
 
+    <section class="card" id="sigcard">
+      <div class="bar"><h2>Nyckeltal och tekniska signaler</h2></div>
+      <div id="sigbody"><div class="empty">Laddar…</div></div>
+    </section>
+
     <section class="card">
       <div class="bar"><h2>Köp och försäljningar</h2></div>
       <div class="tablewrap" id="lots"></div>
@@ -405,10 +410,56 @@ function renderHolding() {
     ].map(([l, v, sub]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${sub}</div></div>`).join("");
   }
   renderLots(); drawHoldingChart(); renderHistTable(); renderNavs();
+  if (!state.sigLoaded) { state.sigLoaded = true; loadSignals(false); }
 }
 
 /* klockslag i webbläsarens tidszon (inte serverns), så att det alltid stämmer med din klocka */
 const hhmm = p => p.ts ? new Date(p.ts * 1000).toLocaleTimeString("sv-SE", {hour: "2-digit", minute: "2-digit"}) : p.t;
+
+async function loadSignals(refresh) {
+  const id = state.config.id, box = $("sigbody");
+  $("sigcard").hidden = state.config.source === "manual";
+  if ($("sigcard").hidden) return;
+  if (box.dataset.id !== id) { box.innerHTML = `<div class="empty">Laddar…</div>`; box.dataset.id = id; }
+  let s;
+  try { s = await api("api/holdings/" + encodeURIComponent(id) + "/signals" + (refresh ? "?refresh=1" : "")); }
+  catch (e) { s = {error: e.message}; }
+  if (!state || state.config.id !== id) return;
+  if (s.error) { box.innerHTML = `<div class="empty">${esc(s.error)}</div>`; return; }
+  const m = s.metrics, pc = s.price_ccy, v = s.verdict;
+  const vcls = v.signal > 0 ? "up" : v.signal < 0 ? "down" : "";
+  const rt = (l, k) => `<tr><td>${l}</td><td class="${cls(m.ret[k])}">${m.ret[k] == null ? "–" : pct(m.ret[k])}</td></tr>`;
+  const num = (x, d = 2) => x == null ? "–" : fmt(x, d);
+  const dot = n => `<span class="${n > 0 ? "up" : n < 0 ? "down" : ""}">${n > 0 ? "▲ positiv" : n < 0 ? "▼ negativ" : "■ neutral"}</span>`;
+  const bt = s.backtest;
+  box.innerHTML = `
+    <div class="sub">Algoritmens samlade signal (${s.indicators.length} regler, kurser till ${esc(s.as_of)})</div>
+    <div class="hero ${vcls}" style="font-size:1.6rem">${esc(v.label)}</div>
+    <div class="sub">Poäng ${v.score == null ? "–" : sgn(v.score, 2)} på skalan −1 (alla regler negativa) till +1 (alla positiva).</div>
+    ${s.warning ? `<div class="banner err">${esc(s.warning)}</div>` : ""}
+    <div class="tablewrap"><table><thead><tr><th>Regel</th><th>Värde</th><th>Signal</th></tr></thead><tbody>${
+      s.indicators.map(i => `<tr><td>${esc(i.name)}<div class="sub">${esc(i.note)}</div></td><td>${esc(i.value)}</td><td>${dot(i.signal)}</td></tr>`).join("")}</tbody></table></div>
+    <div class="kpis" style="margin-top:12px">${[
+      ["Kurs", `${num(s.price)} ${pc}`, ""],
+      ["52 veckor, högsta / lägsta", `${num(m.high52)} / ${num(m.low52)}`, `${pct(m.from_high)} från högsta · ${pct(m.from_low)} från lägsta`],
+      ["Volatilitet (60 d, årstakt)", m.vol60 == null ? "–" : fmt(m.vol60, 1) + " %", "svängighet i dagskurserna"],
+      ["Största nedgång senaste året", fmt(m.maxdd1y, 1) + " %", "från toppen till botten"],
+      ["Medelvärden SMA20 / 50 / 200", `${num(m.sma20, 1)} / ${num(m.sma50, 1)} / ${num(m.sma200, 1)}`, pc],
+      ["RSI (14)", m.rsi14 == null ? "–" : fmt(m.rsi14, 0), "30 = översålt, 70 = överköpt"],
+    ].map(([l, x, sub]) => `<div class="kpi"><div class="l">${l}</div><div class="v" style="font-size:1.05rem">${x}</div><div class="s">${sub}</div></div>`).join("")}</div>
+    <div class="tablewrap"><table><thead><tr><th>Avkastning (kurs)</th><th></th></tr></thead><tbody>${
+      rt("1 dag", "1d") + rt("1 vecka", "1w") + rt("1 månad", "1m") + rt("3 månader", "3m") + rt("6 månader", "6m") + rt("12 månader", "12m")}</tbody></table></div>
+    ${bt ? `<h3 style="margin:16px 0 4px">Hur hade reglerna fungerat? (backtest, ${bt.days} handelsdagar)</h3>
+      <div class="tablewrap"><table><thead><tr><th>Strategi</th><th>Avkastning</th><th>Affärer</th><th>Största nedgång</th><th>Nu</th></tr></thead><tbody>
+      <tr><td>Bara äga aktien (jämförelse)</td><td class="${cls(bt.buyhold)}">${pct(bt.buyhold)}</td><td>1</td><td>${fmt(bt.buyhold_dd, 1)} %</td><td>–</td></tr>${
+      bt.rules.map(r => `<tr><td>${esc(r.name)}</td><td class="${cls(r.ret)}">${pct(r.ret)}</td><td>${r.trades}</td><td>${fmt(r.maxdd, 1)} %</td><td>${r.invested_now ? "inne" : "ute"}</td></tr>`).join("")}</tbody></table></div>
+      <div class="sub">Signal på dagens stängning ger position från nästa dag. Utan courtage, skatt, spread och utdelningar.</div>`
+      : `<div class="sub">Backtest kräver minst ca 260 handelsdagars historik.</div>`}
+    <div class="hint"><b>Viktigt:</b> Det här är mekaniska regler som används i algoritmisk handel (trendföljning, momentum, återgång till medelvärdet),
+      beräknade på historiska kurser. De är <b>inte personlig investeringsrådgivning</b> och ingen rekommendation att köpa eller sälja.
+      Reglerna tar inte hänsyn till bolagets ekonomi, nyheter, din skatt eller din situation, och historiskt utfall garanterar inget om framtiden.
+      Nyckeltal som P/E och utdelning ingår inte, eftersom datakällan bara har kurser.</div>`;
+}
 
 function renderNavs() {
   const el = $("navlist"), navs = state.navs;

@@ -25,6 +25,9 @@ import uuid
 import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # python -I lägger inte till skriptets mapp
+import signals  # noqa: E402
+
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.environ.get("ESPP_DATA_DIR") or os.path.join(BASE, "data")
 INGRESS = os.environ.get("ESPP_INGRESS") == "1"        # körs som Home Assistant-tillägg
@@ -660,6 +663,49 @@ def get_intraday(cfg, last_close, refresh, cache_file):
         return None, "Kunde inte hämta intradagskurser: %s" % e
 
 
+def demo_history(cfg, days=900):
+    rnd = random.Random(zlib.crc32(cfg["symbol"].encode()) + 99)
+    d, p, out = dt.date.today() - dt.timedelta(days=days), 100.0 + zlib.crc32(cfg["symbol"].encode()) % 200, {}
+    while d <= dt.date.today():
+        if d.weekday() < 5:
+            p *= math.exp(rnd.gauss(0.0003, 0.013))
+            out[d.isoformat()] = round(p, 2)
+        d += dt.timedelta(days=1)
+    return out
+
+
+def get_tech_history(cfg, refresh, cache_file):
+    """Cirka tre års dagskurser för signalberäkning. En hämtning per dag (som övriga kurser)."""
+    if DEMO:
+        return demo_history(cfg), None
+    cache = _read_json(cache_file, {})
+    now = time.time()
+    same = cache.get("symbol") == cfg["symbol"] and bool(cache.get("prices"))
+    if same and not refresh and cache.get("fetched_at", 0) >= last_due(now, cfg):
+        return cache["prices"], None
+    try:
+        prices, _meta = fetch_prices(cfg["symbol"], dt.date.today() - dt.timedelta(days=1100))
+        _write_json(cache_file, {"symbol": cfg["symbol"], "fetched_at": now, "prices": prices})
+        return prices, None
+    except Exception as e:
+        if same:
+            return cache["prices"], "Kunde inte hämta ny kurshistorik (%s). Visar senast sparade." % e
+        return None, "Kunde inte hämta kurshistorik: %s" % e
+
+
+def build_signals(h, refresh=False):
+    cfg = holding_cfg(h)
+    if cfg["source"] == "manual":
+        return {"error": "Signaler beräknas inte för manuella fonder (för få kurser)."}
+    prices, err = get_tech_history(cfg, refresh, cache_path(h, "tech"))
+    if not prices:
+        return {"error": err or "Ingen kurshistorik tillgänglig"}
+    keys = sorted(prices)
+    res = signals.analyse(keys, [prices[k] for k in keys])
+    res.update(price_ccy=cfg["price_ccy"], warning=err)
+    return res
+
+
 def build_intraday(h, refresh=False):
     cfg = holding_cfg(h)
     base = {"points": [], "price_ccy": cfg["price_ccy"], "home_ccy": cfg["home_ccy"]}
@@ -725,7 +771,7 @@ def validate_lot(body, holdings):
 
 # ---------------------------------------------------------------- HTTP
 
-RE_HOLDING_API = re.compile(r"^/api/holdings/([a-z0-9_-]+)/(summary|intraday)$")
+RE_HOLDING_API = re.compile(r"^/api/holdings/([a-z0-9_-]+)/(summary|intraday|signals)$")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -787,6 +833,8 @@ class Handler(BaseHTTPRequestHandler):
             if not h:
                 return self._send(404, {"error": "Innehavet finns inte"})
             with LOCK:
+                if m.group(2) == "signals":
+                    return self._send(200, build_signals(h, refresh))
                 return self._send(200, build_summary(h, refresh) if m.group(2) == "summary" else build_intraday(h, refresh))
         self._send(404, {"error": "Hittades inte"})
 

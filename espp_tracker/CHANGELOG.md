@@ -4,6 +4,11 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [2.6.0] - 2026-11-24
+
+### Tillagt
+- Signalkolumn på Översikt: för varje innehav och bevakad aktie visas en symbol med den samlade tekniska signalen (▲ Köp, ▼ Sälj eller ■ Neutral) och poängen. Det är mekaniska regler, inte personlig rådgivning.
+
 ## [2.5.1] - 2026-11-24
 
 ### Rättat

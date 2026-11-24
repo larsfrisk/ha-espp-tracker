@@ -319,19 +319,37 @@ function renderOverview() {
     ].map(([l, v, s]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
   }
   $("otable").innerHTML = p.holdings.length ? `<table><thead><tr><th>Aktie</th><th>Värde (${home})</th><th>Andel</th>
-      <th>Idag (${home})</th><th>Orealiserat (${home})</th></tr></thead><tbody>` +
+      <th>Idag (${home})</th><th>Orealiserat (${home})</th><th title="Mekanisk teknisk signal, ingen rådgivning">Signal</th></tr></thead><tbody>` +
     p.holdings.map(h => {
       const link = `<a href="#/h/${esc(h.id)}">${esc(h.name)}</a><div class="sub">${esc(h.symbol)}${h.price ? ` · ${fmt(h.price, 2)} ${esc(h.price_ccy)} (${pct(h.price_pct)})` : ""}</div>`;
-      if (!h.has_lots || !h.has_prices) return `<tr><td>${link}</td><td colspan="4" class="sub" style="text-align:right">${h.has_prices ? "Inga transaktioner än" : "Inga kurser tillgängliga"}</td></tr>`;
+      if (!h.has_lots || !h.has_prices) return `<tr><td>${link}</td><td colspan="4" class="sub" style="text-align:right">${h.has_prices ? "Inga transaktioner än" : "Inga kurser tillgängliga"}</td>${sigCell(h)}</tr>`;
       return `<tr><td>${link}</td><td>${fmt(h.value)}</td>
         <td><span class="wbar"><i style="width:${Math.min(100, h.weight).toFixed(1)}%"></i></span>${fmt(h.weight, 1)} %</td>
         <td class="${cls(h.day_change)}">${arrow(h.day_change)} ${sgn(h.day_change)}<div class="sub">${pct(h.day_pct)}</div></td>
-        <td class="${cls(h.gain)}">${arrow(h.gain)} ${sgn(h.gain)}<div class="sub">${pct(h.gain_pct)}</div></td></tr>`;
-    }).join("") + `</tbody></table>` : "";
+        <td class="${cls(h.gain)}">${arrow(h.gain)} ${sgn(h.gain)}<div class="sub">${pct(h.gain_pct)}</div></td>${sigCell(h)}</tr>`;
+    }).join("") + `</tbody></table><div class="sub" style="margin-top:8px">Signal = mekanisk teknisk signal (trend, momentum, RSI m.fl.), <b>inte personlig rådgivning</b> och ingen rekommendation. Klicka på aktien för detaljer och backtest.</div>` : "";
+  loadOverviewSignals(p.holdings);
   const iv = ["1m", "5m"].includes(p.config.intraday_interval) ? p.config.intraday_interval : "15m";
   document.querySelectorAll("#ivseg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.iv === iv));
   $("ochartcard").hidden = !any;
   drawOverviewChart();
+}
+
+const sigCache = {};
+const SIGHTML = v => v.signal > 0 ? `<span class="up">▲ Köp</span>` : v.signal < 0 ? `<span class="down">▼ Sälj</span>` : `<span>■ Neutral</span>`;
+const sigCell = h => `<td class="sigcell" data-id="${esc(h.id)}">${sigCache[h.id] ? sigCache[h.id] : h.has_prices ? "…" : "–"}</td>`;
+
+async function loadOverviewSignals(holdings) {
+  for (const h of holdings) {
+    if (!h.has_prices || sigCache[h.id]) continue;
+    let html = "–";
+    try {
+      const s = await api("api/holdings/" + encodeURIComponent(h.id) + "/signals");
+      if (s.verdict) html = SIGHTML(s.verdict) + `<div class="sub">${fmt(s.verdict.score, 2)}</div>`;
+    } catch (e) { /* lämna – */ }
+    sigCache[h.id] = html;
+    document.querySelectorAll(`.sigcell[data-id="${CSS.escape(h.id)}"]`).forEach(c => c.innerHTML = html);
+  }
 }
 
 function filterRange(h, days) {

@@ -100,8 +100,13 @@ def find_holding(hid):
 
 def holding_cfg(h):
     cfg = load_config()
-    cfg.update(id=h["id"], name=h["name"], symbol=h["symbol"], price_ccy=h["price_ccy"])
+    cfg.update(id=h["id"], name=h["name"], symbol=h["symbol"], price_ccy=h["price_ccy"],
+               kind=h.get("kind", "stock"), source=h.get("source", "yahoo"))
     return cfg
+
+
+def nav_path(hid):
+    return os.path.join(DATA_DIR, "nav_%s.json" % hid)
 
 
 def cache_path(h, kind="cache"):
@@ -183,18 +188,22 @@ def demo_data(start, cfg):
     return prices, fx, {"currency": cfg["price_ccy"], "exchange": "DEMO"}
 
 
-DEMO_SEARCH = [("VOLV-B.ST", "Volvo AB ser. B", "Stockholm", "SEK"), ("ERIC-B.ST", "Telefonaktiebolaget LM Ericsson ser. B", "Stockholm", "SEK"),
-               ("INVE-B.ST", "Investor AB ser. B", "Stockholm", "SEK"), ("HM-B.ST", "H & M Hennes & Mauritz AB ser. B", "Stockholm", "SEK"),
-               ("SEB-A.ST", "Skandinaviska Enskilda Banken ser. A", "Stockholm", "SEK"), ("ABB.ST", "ABB Ltd", "Stockholm", "SEK"),
-               ("AAPL", "Apple Inc.", "NASDAQ", "USD")]
+DEMO_SEARCH = [("VOLV-B.ST", "Volvo AB ser. B", "Stockholm", "SEK", "stock"), ("ERIC-B.ST", "Telefonaktiebolaget LM Ericsson ser. B", "Stockholm", "SEK", "stock"),
+               ("INVE-B.ST", "Investor AB ser. B", "Stockholm", "SEK", "stock"), ("HM-B.ST", "H & M Hennes & Mauritz AB ser. B", "Stockholm", "SEK", "stock"),
+               ("SEB-A.ST", "Skandinaviska Enskilda Banken ser. A", "Stockholm", "SEK", "stock"), ("ABB.ST", "ABB Ltd", "Stockholm", "SEK", "stock"),
+               ("AAPL", "Apple Inc.", "NASDAQ", "USD", "stock"),
+               ("0P00005U1J.ST", "Avanza Zero (demo)", "Stockholm", "SEK", "fund"), ("0P00000LSN.ST", "Skandia Realräntefond (demo)", "Stockholm", "SEK", "fund"),
+               ("0P00000IAJ.ST", "Skandia Time Global (demo)", "Stockholm", "SEK", "fund")]
+KINDS = {"MUTUALFUND": "fund", "ETF": "etf", "EQUITY": "stock"}
+ISIN_RE = re.compile(r"[A-Z]{2}[A-Z0-9]{9}[0-9]")
 
 
 def lookup_symbol(sym):
     """Kontrollerar symbolen hos Yahoo Finance. Returnerar namn och valuta."""
     if DEMO:
-        for s_, n, _e, c in DEMO_SEARCH:
+        for s_, n, _e, c, k in DEMO_SEARCH:
             if s_ == sym:
-                return {"name": n, "currency": c}
+                return {"name": n, "currency": c, "kind": k}
         raise ValueError("Hittar ingen aktie med symbolen %s (demo)" % sym)
     url = "https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1d&range=5d" % urllib.parse.quote(sym)
     try:
@@ -208,25 +217,36 @@ def lookup_symbol(sym):
         raise ValueError("Yahoo Finance gav ingen valuta för %s" % sym)
     if ccy in ("GBp", "GBX", "ZAc", "ILA"):
         raise ValueError("Aktier som noteras i %s (delenhet) stöds inte än" % ccy)
-    return {"name": meta.get("longName") or meta.get("shortName") or sym, "currency": ccy.upper()}
+    return {"name": meta.get("longName") or meta.get("shortName") or sym, "currency": ccy.upper(),
+            "kind": KINDS.get(meta.get("instrumentType"), "stock")}
 
 
 def search_symbols(q):
-    """Sök bolag hos Yahoo Finance. Stockholmsbörsen (.ST) sorteras först."""
+    """Sök aktier, ETF:er och fonder (namn eller ISIN) hos Yahoo Finance. Svenska (.ST) sorteras först."""
     q = q.strip()[:40]
     if DEMO:
-        out = [{"symbol": s_, "name": n, "exchange": e} for s_, n, e, _c in DEMO_SEARCH
+        out = [{"symbol": s_, "name": n, "exchange": e, "kind": k} for s_, n, e, _c, k in DEMO_SEARCH
                if q.lower() in n.lower() or q.lower() in s_.lower()]
     else:
         url = "https://query1.finance.yahoo.com/v1/finance/search?q=%s&quotesCount=10&newsCount=0&listsCount=0" % urllib.parse.quote(q)
         out = [{"symbol": x["symbol"], "name": x.get("shortname") or x.get("longname") or x["symbol"],
-                "exchange": x.get("exchDisp") or x.get("exchange") or ""}
-               for x in _http_json(url).get("quotes", []) if x.get("quoteType") in ("EQUITY", "ETF") and x.get("symbol")]
+                "exchange": x.get("exchDisp") or x.get("exchange") or "", "kind": KINDS[x["quoteType"]]}
+               for x in _http_json(url).get("quotes", []) if x.get("quoteType") in KINDS and x.get("symbol")]
     return sorted(out, key=lambda r: not r["symbol"].endswith(".ST"))
 
 
 def add_holding(body):
+    if body.get("manual"):
+        return add_manual_fund(body)
     sym = str(body.get("symbol", "")).strip().upper()
+    if ISIN_RE.fullmatch(sym):                       # ISIN: slå upp symbolen hos Yahoo
+        try:
+            hits = search_symbols(sym)
+        except Exception as e:
+            raise ValueError("Kunde inte slå upp ISIN just nu (%s)" % e)
+        if not hits:
+            raise ValueError("Hittar ingen aktie eller fond med ISIN %s hos Yahoo Finance. Lägg till fonden manuellt i stället." % sym)
+        sym = hits[0]["symbol"].upper()
     if not re.fullmatch(r"[A-Z0-9][A-Z0-9.\-=^]{0,19}", sym):
         raise ValueError("Ogiltig symbol. Stockholmsbörsen slutar på .ST, till exempel VOLV-B.ST")
     hs = load_holdings()
@@ -240,15 +260,64 @@ def add_holding(body):
         except Exception:
             raise ValueError("Valutan %s kan inte räknas om till %s (ECB-kurser saknas)" % (info["currency"], home))
     name = (str(body.get("name") or "").strip() or info["name"])[:60]
+    return _store_holding(hs, name, sym, info["currency"], info.get("kind", "stock"))
+
+
+def _store_holding(hs, name, symbol, ccy, kind, source=None):
     base = _slug(name)
     hid, n = base, 2
     while any(h["id"] == hid for h in hs):
         hid, n = "%s-%d" % (base, n), n + 1
-    h = {"id": hid, "name": name, "symbol": sym, "price_ccy": info["currency"],
+    h = {"id": hid, "name": name, "symbol": symbol, "price_ccy": ccy, "kind": kind,
          "sensor_prefix": "holding_" + hid.replace("-", "_")}
+    if source:
+        h["source"] = source
     hs.append(h)
     save_holdings(hs)
     return h
+
+
+def add_manual_fund(body):
+    """Fond som inte finns hos Yahoo: du skriver in NAV själv (alltid i hemvalutan)."""
+    name = str(body.get("name") or "").strip()[:60]
+    if not name:
+        raise ValueError("Fonden behöver ett namn")
+    isin = str(body.get("isin") or "").strip().upper()
+    if isin and not ISIN_RE.fullmatch(isin):
+        raise ValueError("Ogiltigt ISIN (12 tecken, t.ex. SE0000000000)")
+    hs = load_holdings()
+    sym = isin or "MANUELL-" + _slug(name).upper()
+    if any(h["symbol"].upper() == sym for h in hs):
+        raise ValueError("Du har redan lagt till %s" % sym)
+    return _store_holding(hs, name, sym, load_config()["home_ccy"], "fund", source="manual")
+
+
+def set_nav(h, body):
+    if h.get("source") != "manual":
+        raise ValueError("NAV läggs bara in för manuella fonder")
+    try:
+        d = dt.date.fromisoformat(str(body.get("date", "")))
+    except ValueError:
+        raise ValueError("Ogiltigt datum (använd ÅÅÅÅ-MM-DD)")
+    if d > dt.date.today():
+        raise ValueError("Datumet ligger i framtiden")
+    try:
+        p = float(str(body.get("price", "")).replace(",", ".").replace(" ", ""))
+    except ValueError:
+        raise ValueError("Ogiltigt NAV")
+    if not math.isfinite(p) or p <= 0:
+        raise ValueError("NAV måste vara större än 0")
+    navs = _read_json(nav_path(h["id"]), {})
+    navs[d.isoformat()] = p
+    _write_json(nav_path(h["id"]), navs)
+
+
+def del_nav(h, date_s):
+    navs = _read_json(nav_path(h["id"]), {})
+    if date_s not in navs:
+        raise ValueError("Det NAV:et finns inte")
+    del navs[date_s]
+    _write_json(nav_path(h["id"]), navs)
 
 
 def _hhmm(cfg):
@@ -280,6 +349,9 @@ CACHE_VERSION = 2
 
 def get_market(cfg, start, cache_file):
     """Hämtar (med cache) kurser och valuta. Returnerar (prices, fx, meta, fetched_at, error)."""
+    if cfg.get("source") == "manual":
+        return (_read_json(nav_path(cfg["id"]), {}), {}, {"currency": cfg["price_ccy"], "exchange": "manuell"},
+                time.time(), None)
     cache = _read_json(cache_file, {})
     now = time.time()
     key = (cfg["symbol"], cfg["price_ccy"], cfg["home_ccy"])
@@ -453,6 +525,7 @@ def build_summary(h, refresh=False):
         "fetched_at": dt.datetime.fromtimestamp(fetched_at).isoformat(timespec="seconds"),
         "summary": summ, "has_lots": bool(lots),
         "next_update": next_due(time.time(), cfg).isoformat(timespec="minutes"),
+        "navs": [{"date": d, "price": p} for d, p in sorted(prices.items(), reverse=True)] if cfg["source"] == "manual" else None,
     }
 
 
@@ -481,7 +554,7 @@ def build_portfolio(refresh=False):
         if d["error"]:
             errors.append("%s: %s" % (h["name"], d["error"]))
         row = {"id": h["id"], "name": h["name"], "symbol": h["symbol"], "price_ccy": h["price_ccy"],
-               "sensor_prefix": h.get("sensor_prefix"), "has_lots": d["has_lots"], "has_prices": bool(s),
+               "kind": h.get("kind", "stock"), "sensor_prefix": h.get("sensor_prefix"), "has_lots": d["has_lots"], "has_prices": bool(s),
                "shares": 0.0, "value": 0.0, "cost": 0.0, "gain": 0.0, "gain_pct": None, "realized": 0.0,
                "total": 0.0, "day_change": 0.0, "day_pct": None, "price_pct": None, "price": None,
                "fx": None, "as_of": None, "price_effect": 0.0, "fx_effect": 0.0}
@@ -566,9 +639,11 @@ def get_intraday(cfg, last_close, refresh, cache_file):
 
 def build_intraday(h, refresh=False):
     cfg = holding_cfg(h)
+    base = {"points": [], "price_ccy": cfg["price_ccy"], "home_ccy": cfg["home_ccy"]}
+    if cfg["kind"] == "fund":
+        return dict(base, error="Fonder har bara en kurs per dag (NAV), så det finns ingen intradagsvy.")
     lots = lots_for(h["id"], load_lots())
     prices, fx, _meta, _t, err = get_market(cfg, _start(lots), cache_path(h))
-    base = {"points": [], "price_ccy": cfg["price_ccy"], "home_ccy": cfg["home_ccy"]}
     if not prices:
         return dict(base, error=err or "Inga kurser tillgängliga")
     summ = compute(lots, cfg, prices, fx)
@@ -717,6 +792,17 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError as e:
                     return self._send(400, {"error": str(e)})
             return self._send(201, h)
+        m = re.match(r"^/api/holdings/([a-z0-9_-]+)/prices$", self.path)
+        if m:
+            with LOCK:
+                h = find_holding(m.group(1))
+                if not h:
+                    return self._send(404, {"error": "Innehavet finns inte"})
+                try:
+                    set_nav(h, body)
+                except ValueError as e:
+                    return self._send(400, {"error": str(e)})
+            return self._send(201, {"ok": True})
         self._send(404, {"error": "Hittades inte"})
 
     def do_DELETE(self):
@@ -735,6 +821,17 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(409, {"error": "Kan inte ta bort: " + str(e)})
                 save_lots(keep)
             return self._send(200, {"ok": True})
+        m = re.match(r"^/api/holdings/([a-z0-9_-]+)/prices/(\d{4}-\d{2}-\d{2})$", self.path)
+        if m:
+            with LOCK:
+                h = find_holding(m.group(1))
+                if not h or h.get("source") != "manual":
+                    return self._send(404, {"error": "Innehavet finns inte"})
+                try:
+                    del_nav(h, m.group(2))
+                except ValueError as e:
+                    return self._send(404, {"error": str(e)})
+            return self._send(200, {"ok": True})
         m = re.match(r"^/api/holdings/([a-z0-9_-]+)$", self.path)
         if m:
             with LOCK:
@@ -743,6 +840,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(404, {"error": "Innehavet finns inte"})
                 save_lots([l for l in lots if l["holding"] != m.group(1)])
                 save_holdings([h for h in hs if h["id"] != m.group(1)])
+                try:
+                    os.remove(nav_path(m.group(1)))
+                except FileNotFoundError:
+                    pass
             return self._send(200, {"ok": True})
         self._send(404, {"error": "Hittades inte"})
 
@@ -855,7 +956,11 @@ def _demo_setup():
             {"id": "hitachi", "name": "Hitachi, Ltd.", "symbol": "6501.T", "price_ccy": "JPY", "sensor_prefix": "espp"},
             {"id": "volvo-ab-ser-b", "name": "Volvo AB ser. B", "symbol": "VOLV-B.ST", "price_ccy": "SEK", "sensor_prefix": "holding_volvo_ab_ser_b"},
             {"id": "investor-ab-ser-b", "name": "Investor AB ser. B", "symbol": "INVE-B.ST", "price_ccy": "SEK", "sensor_prefix": "holding_investor_ab_ser_b"},
+            {"id": "avanza-zero", "name": "Avanza Zero (demo)", "symbol": "0P00005U1J.ST", "price_ccy": "SEK", "kind": "fund", "sensor_prefix": "holding_avanza_zero"},
+            {"id": "skandia-sverige-exponering", "name": "Skandia Sverige Exponering", "symbol": "MANUELL-SKANDIA-SVERIGE-EXPONERING",
+             "price_ccy": "SEK", "kind": "fund", "source": "manual", "sensor_prefix": "holding_skandia_sverige_exponering"},
         ])
+        _write_json(nav_path("skandia-sverige-exponering"), {day(100): 340.0, day(70): 352.5, day(40): 347.2, day(10): 361.8})
     if not os.path.exists(LOTS_FILE):
         b = lambda i, hid, n, sh, paid=None, note="": {"id": "demo%04d" % i, "holding": hid, "date": day(n), "shares": sh,
                                                        "price": None, "paid": paid, "note": note}
@@ -865,7 +970,8 @@ def _demo_setup():
             {"id": "demo0004", "holding": "hitachi", "type": "sell", "date": day(10), "shares": 8,
              "price": None, "received": None, "note": "Demo – försäljning"},
             b(5, "volvo-ab-ser-b", 120, 40), b(6, "volvo-ab-ser-b", 45, 25),
-            b(7, "investor-ab-ser-b", 100, 30),
+            b(7, "investor-ab-ser-b", 100, 30), b(8, "avanza-zero", 130, 15, 6000, "Månadssparande"),
+            b(9, "avanza-zero", 60, 10, 4300, "Månadssparande"), b(10, "skandia-sverige-exponering", 100, 20, 6800),
         ])
 
 

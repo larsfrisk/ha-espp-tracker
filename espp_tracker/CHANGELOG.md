@@ -4,6 +4,16 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [2.1.0] - 2026-11-24
+
+### Tillagt
+- Fonder: lägg till fonder du köper via Avanza, Skandia eller annan förvaltare. Sök på fondens namn eller ISIN (t.ex. `SE0001718388`) så slås den upp hos Yahoo Finance, som har många svenska fonder med Morningstar-symboler (`0P…​.ST`). Fonder får en egen sida och ingår i portföljöversikten och sensorerna i Home Assistant.
+- Manuella fonder: finns inte fonden hos Yahoo (t.ex. vissa Skandia-fonder) lägger du till den manuellt och skriver själv in NAV (andelskurs) med datum. Värdet räknas med senast inlagda NAV. NAV kan tas bort igen.
+- Sökresultaten visar om träffen är aktie, ETF eller fond.
+
+### Ändrat
+- Fondsidor visar "andelar" och "NAV" i stället för aktier och kurs, och har ingen vy Idag (fonder har bara en kurs per dag).
+
 ## [2.0.0] - 2026-11-24
 
 ### Tillagt

@@ -11,6 +11,14 @@ Andra börser fungerar om Yahoo Finance har dem och valutan kan räknas om till 
 Sedan lägger du in dina köp och försäljningar (datum, antal, belopp) för hand på aktiens sida.
 Vinst vid försäljning räknas med genomsnittsmetoden.
 
+## Fonder (Avanza, Skandia m.fl.)
+
+Välj **+ Lägg till aktie/fond** och sök på fondens namn eller **ISIN**. Yahoo Finance har många svenska
+fonder (symboler som `0P00005U1J.ST`), och då hämtas NAV automatiskt en gång per dag, precis som aktier.
+Avanza och Skandia har inget öppet API, så fonder som Yahoo saknar läggs till under
+**Lägg till fond manuellt**: du skriver själv in NAV (andelskurs) och datum på fondens sida.
+Köp och sälj läggs in som vanligt (antal andelar och belopp). Fonder har ingen vy Idag.
+
 ## Kurser
 
 Historiken (stängningskurser från ditt första köp) hämtas en gång per dag kl 16:30, efter att Tokyo-börsen

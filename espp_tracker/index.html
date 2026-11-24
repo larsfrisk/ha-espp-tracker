@@ -106,7 +106,7 @@
     <section class="card" id="otop"></section>
     <section class="kpis" id="okpis"></section>
     <section class="card">
-      <div class="bar"><h2>Innehav</h2><a class="btn" href="#/add">+ Lägg till aktie</a></div>
+      <div class="bar"><h2>Innehav</h2><a class="btn" href="#/add">+ Lägg till aktie/fond</a></div>
       <div class="tablewrap" id="otable"></div>
     </section>
     <section class="card" id="ochartcard">
@@ -155,7 +155,7 @@
       <form id="addform">
         <label>Typ<select name="type" id="typesel"><option value="buy">Köp</option><option value="sell">Sälj</option></select></label>
         <label>Datum<input name="date" type="date" required></label>
-        <label>Antal aktier<input name="shares" inputmode="decimal" placeholder="t.ex. 12" required></label>
+        <label><span id="sharelabel">Antal aktier</span><input name="shares" inputmode="decimal" placeholder="t.ex. 12" required></label>
         <label><span><span id="amountlabel">Inbetalt belopp</span> (<span class="home">SEK</span>)</span><input name="amount" inputmode="decimal" placeholder="valfritt"></label>
         <label><span>Kurs (<span class="pccy">JPY</span>)</span><input name="price" inputmode="decimal" placeholder="valfritt"></label>
         <label>Anteckning<input name="note" maxlength="80" placeholder="t.ex. ESPP jan"></label>
@@ -172,24 +172,48 @@
       <div class="banner err" id="formerr" hidden></div>
     </section>
 
+    <section class="card" id="navcard" hidden>
+      <div class="bar"><h2>NAV-kurser (manuellt)</h2></div>
+      <form id="navform">
+        <label>Datum<input name="date" type="date" required></label>
+        <label><span>NAV (<span class="home">SEK</span>)</span><input name="price" inputmode="decimal" placeholder="t.ex. 361,80" required></label>
+        <button class="btn primary" type="submit">Spara NAV</button>
+      </form>
+      <div class="hint">Den här fonden hämtas inte automatiskt. Skriv in fondens NAV (andelskurs) från Avanza eller Skandia när du vill uppdatera värdet. Mellan två NAV-datum gäller det senast inlagda NAV:et.</div>
+      <div class="banner err" id="naverr" hidden></div>
+      <div class="tablewrap" id="navlist"></div>
+    </section>
+
     <p><button class="btn danger" id="delholding">Ta bort aktien från portföljen…</button></p>
   </div>
 
   <!-- ===================== LÄGG TILL AKTIE ===================== -->
   <div class="view" id="view-add" hidden>
     <section class="card">
-      <div class="bar"><h2>Lägg till aktie</h2></div>
+      <div class="bar"><h2>Lägg till aktie eller fond</h2></div>
       <form id="searchform">
-        <label>Sök bolag eller skriv symbol<input id="q" placeholder="t.ex. Volvo eller VOLV-B.ST" autocomplete="off" required></label>
+        <label>Sök namn, symbol eller ISIN<input id="q" placeholder="t.ex. Volvo, VOLV-B.ST eller SE0001718388" autocomplete="off" required></label>
         <button class="btn primary" type="submit">Sök</button>
         <button class="btn" type="button" id="addsym">Lägg till symbolen direkt</button>
       </form>
       <div class="hint">
         Stockholmsbörsen har suffixet <code>.ST</code>, till exempel <code>VOLV-B.ST</code>, <code>INVE-B.ST</code> eller <code>ERIC-B.ST</code>.
         Andra börser går också om Yahoo Finance har dem och valutan kan räknas om till kronor.
+        <b>Fonder</b> (Avanza, Skandia m.fl.): sök på fondens namn eller ISIN. Hittas den inte hos Yahoo, lägg till den manuellt nedan.
       </div>
       <div class="banner err" id="adderr" hidden></div>
       <div class="tablewrap results" id="results"></div>
+    </section>
+
+    <section class="card">
+      <div class="bar"><h2>Lägg till fond manuellt</h2></div>
+      <form id="manualform">
+        <label>Fondens namn<input name="name" maxlength="60" placeholder="t.ex. Skandia Sverige Exponering" required></label>
+        <label>ISIN (valfritt)<input name="isin" maxlength="12" placeholder="SE0000000000"></label>
+        <button class="btn primary" type="submit">Lägg till fond</button>
+      </form>
+      <div class="hint">För fonder som saknas hos Yahoo, till exempel vissa Skandia-fonder. Du skriver själv in NAV (andelskurs i kronor) på fondens sida, så ofta du vill följa den. Köp och sälj läggs in som vanligt.</div>
+      <div class="banner err" id="manualerr" hidden></div>
     </section>
   </div>
 </main>
@@ -246,7 +270,7 @@ function renderNav(rt) {
   const cur = (ok) => ok ? ' aria-current="page"' : "";
   $("nav").innerHTML = `<a href="#/"${cur(rt.v === "overview")}>Översikt</a>` +
     portfolio.holdings.map(h => `<a href="#/h/${esc(h.id)}" title="${esc(h.name)} (${esc(h.symbol)})"${cur(rt.v === "holding" && rt.id === h.id)}>${esc(h.name)}</a>`).join("") +
-    `<a href="#/add"${cur(rt.v === "add")}>+ Lägg till aktie</a>`;
+    `<a href="#/add"${cur(rt.v === "add")}>+ Lägg till aktie/fond</a>`;
 }
 
 /* ---------------------------------------------------------------- översikt */
@@ -306,7 +330,13 @@ function drawOverviewChart() {
 /* ---------------------------------------------------------------- ett innehav */
 async function showHolding(id, refresh) {
   state = await api("api/holdings/" + encodeURIComponent(id) + "/summary" + (refresh ? "?refresh=1" : ""));
-  if (range === -1) await loadIntraday(refresh);
+  const isFund = state.config.kind === "fund";
+  document.querySelector('#ranges button[data-r="-1"]').hidden = isFund;
+  if (isFund && range === -1) {
+    range = 30;
+    document.querySelectorAll("#ranges button").forEach(x => x.setAttribute("aria-pressed", +x.dataset.r === range));
+  }
+  if (range === -1 && !isFund) await loadIntraday(refresh);
   renderHolding();
 }
 
@@ -323,13 +353,17 @@ function renderHolding() {
   document.querySelectorAll(".home").forEach(e => e.textContent = home);
   document.querySelectorAll(".pccy").forEach(e => e.textContent = pc);
   $("hname").textContent = c.name;
-  $("hsub").textContent = `${c.symbol} · handlas i ${pc}`;
+  const fund = c.kind === "fund", manual = c.source === "manual", unit = fund ? "andelar" : "aktier";
+  $("hsub").textContent = fund ? `${manual ? "Fond (manuellt NAV)" : c.symbol + " · fond"} · NAV i ${pc}` : `${c.symbol} · handlas i ${pc}`;
+  $("sharelabel").textContent = "Antal " + unit;
+  $("navcard").hidden = !manual;
+  $("delholding").textContent = `Ta bort ${fund ? "fonden" : "aktien"} från portföljen…`;
   if (error) banner(error, true);
 
   const top = $("top"), kp = $("kpis");
   if (!s) {
     $("asof").textContent = "";
-    top.innerHTML = `<div class="empty">Inga kurser tillgängliga just nu.</div>`;
+    top.innerHTML = `<div class="empty">${manual ? "Lägg in minst ett NAV (längre ner på sidan) för att se värdet." : "Inga kurser tillgängliga just nu."}</div>`;
     kp.innerHTML = "";
   } else if (!state.has_lots) {
     $("asof").textContent = `Senaste stängning ${s.as_of}`;
@@ -338,24 +372,33 @@ function renderHolding() {
     kp.innerHTML = "";
   } else {
     const d = s.day;
-    $("asof").textContent = `Stängningskurs ${s.as_of} (jämfört med ${s.prev}) · hämtad ${fetched_at.replace("T", " ")} · nästa automatiska hämtning ${state.next_update.replace("T", " ")}`;
+    $("asof").textContent = `${fund ? "NAV" : "Stängningskurs"} ${s.as_of} (jämfört med ${s.prev}) · hämtad ${fetched_at.replace("T", " ")} · nästa automatiska hämtning ${state.next_update.replace("T", " ")}`;
     const fxNote = pc !== home;
     top.innerHTML = `
       <div class="sub">Värde av ditt innehav</div>
       <div class="hero">${fmt(s.value)}<small>${home}</small></div>
-      <div class="delta ${cls(d.change)}">${arrow(d.change)} ${sgn(d.change)} ${home} (${pct(d.pct)}) senaste handelsdag</div>
+      <div class="delta ${cls(d.change)}">${arrow(d.change)} ${sgn(d.change)} ${home} (${pct(d.pct)}) ${fund ? "senaste NAV" : "senaste handelsdag"}</div>
       ${fxNote ? `<div class="split">varav kurs ${sgn(d.price_effect)} ${home} · valuta ${sgn(d.fx_effect)} ${home}</div>` : ""}`;
     kp.innerHTML = [
       ["Orealiserad vinst", `<span class="${cls(s.gain)}">${arrow(s.gain)} ${sgn(s.gain)} ${home}</span>`, pct(s.gain_pct) + " mot anskaffning"],
       ["Realiserad vinst (sålt)", `<span class="${cls(s.realized)}">${arrow(s.realized)} ${sgn(s.realized)} ${home}</span>`, s.lots.some(l => l.type === "sell") ? "genomsnittsmetoden" : "inga sälj än"],
       ["Totalt", `<span class="${cls(s.total)}">${arrow(s.total)} ${sgn(s.total)} ${home}</span>`, "orealiserat + realiserat"],
-      ["Antal aktier", fmt(s.shares, s.shares % 1 ? 3 : 0), `${s.buys} köp`],
-      ["Aktiekurs", `${fmt(s.price, 2)} ${pc}`, `<span class="${cls(d.price_pct)}">${pct(d.price_pct)}</span> idag`],
+      [fund ? "Antal andelar" : "Antal aktier", fmt(s.shares, s.shares % 1 ? 3 : 0), `${s.buys} köp`],
+      [fund ? "NAV" : "Aktiekurs", `${fmt(s.price, 2)} ${pc}`, `<span class="${cls(d.price_pct)}">${pct(d.price_pct)}</span> idag`],
       ...(fxNote ? [[`${pc}/${home}`, fmt(s.fx, 4), `<span class="${cls(s.fx - s.prev_fx)}">${pct((s.fx / s.prev_fx - 1) * 100)}</span> idag`]] : []),
-      ["Anskaffningsvärde", `${fmt(s.cost)} ${home}`, s.avg_cost ? `${fmt(s.avg_cost, 1)} ${home} per aktie` : "inga aktier kvar"],
+      ["Anskaffningsvärde", `${fmt(s.cost)} ${home}`, s.avg_cost ? `${fmt(s.avg_cost, 1)} ${home} per ${fund ? "andel" : "aktie"}` : "inga andelar/aktier kvar"],
     ].map(([l, v, sub]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${sub}</div></div>`).join("");
   }
-  renderLots(); drawHoldingChart(); renderHistTable();
+  renderLots(); drawHoldingChart(); renderHistTable(); renderNavs();
+}
+
+function renderNavs() {
+  const el = $("navlist"), navs = state.navs;
+  if (!navs) { el.innerHTML = ""; return; }
+  el.innerHTML = navs.length ? `<table><thead><tr><th>Datum</th><th>NAV (${state.config.price_ccy})</th><th></th></tr></thead><tbody>` +
+    navs.map(n => `<tr><td>${esc(n.date)}</td><td>${fmt(n.price, 2)}</td>
+      <td><button class="del" title="Ta bort" aria-label="Ta bort NAV ${esc(n.date)}" data-d="${esc(n.date)}">✕</button></td></tr>`).join("") + `</tbody></table>`
+    : `<div class="empty">Inga NAV inlagda än.</div>`;
 }
 
 function renderLots() {
@@ -405,8 +448,8 @@ function updateChartMeta() {
     }
     nt.textContent = txt;
   } else {
-    lg.innerHTML = `<span><i></i>Värde</span><span><i class="ref"></i>Anskaffningsvärde (kvarvarande aktier)</span>`;
-    nt.textContent = "Ett värde per handelsdag (stängningskurs). Historiken hämtas från första köpet och uppdateras en gång per dag.";
+    lg.innerHTML = `<span><i></i>Värde</span><span><i class="ref"></i>Anskaffningsvärde (kvarvarande)</span>`;
+    nt.textContent = state.config.kind === "fund" ? "Ett värde per dag (fondens NAV). Historiken hämtas från första köpet." : "Ett värde per handelsdag (stängningskurs). Historiken hämtas från första köpet och uppdateras en gång per dag.";
   }
 }
 
@@ -503,6 +546,20 @@ $("lots").addEventListener("click", async e => {
   catch (err) { alert(err.message); }
 });
 
+$("navform").addEventListener("submit", async e => {
+  e.preventDefault();
+  const err = $("naverr"); err.hidden = true;
+  try { await postJson("api/holdings/" + encodeURIComponent(state.config.id) + "/prices", Object.fromEntries(new FormData(e.target).entries()));
+        e.target.reset(); portfolio = null; await show(); }
+  catch (x) { err.textContent = x.message; err.hidden = false; }
+});
+$("navlist").addEventListener("click", async e => {
+  const b = e.target.closest(".del"); if (!b) return;
+  if (!confirm("Ta bort NAV för " + b.dataset.d + "?")) return;
+  try { await api("api/holdings/" + encodeURIComponent(state.config.id) + "/prices/" + b.dataset.d, {method: "DELETE"}); portfolio = null; await show(); }
+  catch (err) { alert(err.message); }
+});
+
 $("typesel").addEventListener("change", e => {
   $("amountlabel").textContent = e.target.value === "sell" ? "Erhållet belopp" : "Inbetalt belopp";
 });
@@ -538,8 +595,8 @@ $("searchform").addEventListener("submit", async e => {
   try {
     const r = await api("api/search?q=" + encodeURIComponent($("q").value));
     res.innerHTML = r.results.length
-      ? `<table><thead><tr><th>Symbol</th><th>Namn</th><th>Börs</th><th></th></tr></thead><tbody>` +
-        r.results.map((x, i) => `<tr><td><code>${esc(x.symbol)}</code></td><td>${esc(x.name)}</td><td>${esc(x.exchange)}</td>
+      ? `<table><thead><tr><th>Symbol</th><th>Namn</th><th>Typ</th><th></th></tr></thead><tbody>` +
+        r.results.map((x, i) => `<tr><td><code>${esc(x.symbol)}</code></td><td>${esc(x.name)}</td><td>${x.kind === "fund" ? "Fond" : x.kind === "etf" ? "ETF" : "Aktie"}<div class="sub">${esc(x.exchange)}</div></td>
           <td><button class="btn" data-i="${i}">Lägg till</button></td></tr>`).join("") + `</tbody></table>`
       : `<div class="empty">Inga träffar. Prova en annan stavning eller skriv symbolen direkt.</div>`;
     res._items = r.results;
@@ -548,6 +605,14 @@ $("searchform").addEventListener("submit", async e => {
 $("results").addEventListener("click", e => {
   const b = e.target.closest("button[data-i]"); if (!b) return;
   const it = $("results")._items[+b.dataset.i]; addHolding(it.symbol, it.name);
+});
+$("manualform").addEventListener("submit", async e => {
+  e.preventDefault();
+  const err = $("manualerr"); err.hidden = true;
+  try {
+    const h = await postJson("api/holdings", Object.assign(Object.fromEntries(new FormData(e.target).entries()), {manual: true}));
+    portfolio = null; location.hash = "#/h/" + h.id;
+  } catch (x) { err.textContent = x.message; err.hidden = false; }
 });
 $("addsym").addEventListener("click", () => {
   const v = $("q").value.trim();

@@ -4,6 +4,13 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [2.5.0] - 2026-11-24
+
+### Tillagt
+- Signaler under dagen i vyn Idag: sex regler på dagens staplar (EMA9/EMA21, kurs mot VWAP, MACD, RSI, Bollingerband, kurs mot dagens öppning), en samlad signal och en lista över när signalen bytte under dagen. Följer vald upplösning (1, 5 eller 15 minuter).
+- Dagens VWAP (volymvägd snittkurs) räknas från Yahoos volymdata.
+- Varning om att Yahoo ofta fördröjer svenska kurser ca 15 minuter och att daytrading är riskfylld. Signalerna är inte personlig rådgivning.
+
 ## [2.4.0] - 2026-11-24
 
 ### Tillagt

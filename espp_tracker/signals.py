@@ -208,3 +208,58 @@ def analyse(dates, v):
         },
         "indicators": inds, "verdict": verdict(inds), "backtest": backtest(v),
     }
+
+
+# ---------------------------------------------------------------- intradag
+
+def _ema_last(v, n):
+    return ema_series(v, n)[-1]
+
+
+def intraday_indicators(v, vwap=None, day_open=None):
+    """Regler på intradagsstaplar. v = stängningskurser (tidigare dagars sista staplar + dagens)."""
+    out = []
+    last = v[-1]
+    if len(v) >= 21:
+        e9, e21 = _ema_last(v, 9), _ema_last(v, 21)
+        out.append({"id": "ema", "name": "EMA9 mot EMA21", "signal": 1 if e9 > e21 else -1,
+                    "value": "EMA9 %s EMA21" % (">" if e9 > e21 else "<"),
+                    "note": "Korta medelvärdet över det långa = kortsiktig uppgång."})
+    if vwap:
+        out.append({"id": "vwap", "name": "Kurs mot VWAP", "signal": 1 if last > vwap else -1,
+                    "value": "%+.2f %% mot VWAP" % ((last / vwap - 1) * 100),
+                    "note": "VWAP = dagens volymvägda snittkurs. Över = köparna har övertaget i dag."})
+    m = macd(v)
+    if m:
+        out.append({"id": "macd", "name": "MACD (12, 26, 9)", "signal": 1 if m[2] > 0 else -1,
+                    "value": "histogram %+.3f" % m[2], "note": "Positivt = stigande kortsiktigt momentum."})
+    r = rsi(v)
+    if r is not None:
+        out.append({"id": "rsi", "name": "RSI (14 staplar)", "signal": 1 if r < 30 else -1 if r > 70 else 0,
+                    "value": "%.0f" % r, "note": "Under 30 = översålt, över 70 = överköpt."})
+    b = bollinger(v)
+    if b:
+        out.append({"id": "boll", "name": "Bollingerband (20, 2)", "signal": 1 if b["pctb"] < 0 else -1 if b["pctb"] > 1 else 0,
+                    "value": "%%B %.2f" % b["pctb"], "note": "Utanför banden = ovanlig rörelse som ofta dras tillbaka."})
+    if day_open:
+        out.append({"id": "open", "name": "Kurs mot dagens öppning", "signal": 1 if last > day_open else -1 if last < day_open else 0,
+                    "value": "%+.2f %%" % ((last / day_open - 1) * 100), "note": "Över öppningskursen = dagen är stark hittills."})
+    return out
+
+
+def intraday(closes, n_today, vwaps=None, day_open=None):
+    """Samlad signal nu samt när den bytte under dagen. closes slutar med dagens n_today staplar."""
+    if n_today < 1 or len(closes) < 21:
+        return {"error": "För få staplar för att beräkna signaler ännu."}
+    base = len(closes) - n_today
+    vwaps = vwaps or [None] * n_today
+    cur = None
+    flips = []
+    for k in range(n_today):
+        inds = intraday_indicators(closes[:base + k + 1], vwaps[k], day_open)
+        vd = verdict(inds)
+        if vd["signal"] != cur:
+            flips.append({"idx": k, "signal": vd["signal"], "label": vd["label"]})
+            cur = vd["signal"]
+    inds = intraday_indicators(closes, vwaps[-1], day_open)
+    return {"indicators": inds, "verdict": verdict(inds), "flips": flips}

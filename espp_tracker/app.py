@@ -613,23 +613,35 @@ def intraday_interval(cfg):
 
 
 def fetch_intraday(symbol, interval="15m"):
-    """Senaste handelsdagens staplar (1, 5 eller 15 minuter) från Yahoo Finance."""
-    rng = "1d" if interval == "1m" else "5d"
+    """Senaste handelsdagens staplar (1, 5 eller 15 minuter) från Yahoo Finance, med volym för VWAP
+    och tidigare dagars sista staplar som uppvärmning för indikatorerna."""
+    rng = "2d" if interval == "1m" else "5d"
     url = "https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=%s&range=%s" % (urllib.parse.quote(symbol), interval, rng)
     res = _http_json(url)["chart"]["result"][0]
     off = res["meta"].get("gmtoffset", 0)
     reg = res["meta"].get("currentTradingPeriod", {}).get("regular", {})
+    q = res["indicators"]["quote"][0]
+    vols, opens = q.get("volume") or [], q.get("open") or []
     days = {}
-    for ts, c in zip(res["timestamp"], res["indicators"]["quote"][0]["close"]):
+    for i, (ts, c) in enumerate(zip(res["timestamp"], q["close"])):
         if c is None:
             continue
         d = dt.datetime.fromtimestamp(ts + off, dt.timezone.utc).date().isoformat()
-        days.setdefault(d, []).append([ts, float(c)])
+        v = vols[i] if i < len(vols) and vols[i] else 0
+        o = opens[i] if i < len(opens) and opens[i] else None
+        days.setdefault(d, []).append([ts, float(c), v, o])
     if not days:
         raise ValueError("inga intradagsdata")
     last = max(days)
     live = bool(reg.get("start") and reg.get("end") and reg["start"] <= time.time() < reg["end"])
-    return {"date": last, "live": live, "points": sorted(days[last]), "interval": interval}
+    today = sorted(days[last])
+    prior = [r[1] for d in sorted(days) if d < last for r in sorted(days[d])][-150:]
+    vw, cv, cpv = [], 0.0, 0.0
+    for _ts, c, v, _o in today:
+        cv, cpv = cv + v, cpv + c * v
+        vw.append(cpv / cv if cv else None)
+    return {"date": last, "live": live, "points": [[r[0], r[1]] for r in today], "interval": interval,
+            "prior": prior, "vwaps": vw, "day_open": today[0][3] or today[0][1]}
 
 
 def demo_intraday(base_price, symbol=""):
@@ -639,7 +651,10 @@ def demo_intraday(base_price, symbol=""):
     for i in range(27):                                                            # till 15:30 JST
         p *= math.exp(rnd.gauss(0.0003, 0.002))
         pts.append([int(start.timestamp()) + i * 900, round(p, 1)])
-    return {"date": dt.date.today().isoformat(), "live": False, "points": pts, "fetched_at": time.time()}
+    prior = [round(base_price * math.exp(rnd.gauss(0, 0.01)), 1) for _ in range(60)]
+    vw = [round(sum(x[1] for x in pts[:i + 1]) / (i + 1), 1) for i in range(len(pts))]
+    return {"date": dt.date.today().isoformat(), "live": False, "points": pts, "fetched_at": time.time(),
+            "prior": prior, "vwaps": vw, "day_open": pts[0][1]}
 
 
 def get_intraday(cfg, last_close, refresh, cache_file):
@@ -726,7 +741,13 @@ def build_intraday(h, refresh=False):
     base_price = P.at(before)
     pts = [{"ts": ts, "t": dt.datetime.fromtimestamp(ts).strftime("%H:%M"), "price": p,
             "value": shares * p * rate} for ts, p in data["points"]]
-    return dict(base, date=data["date"], live=data["live"], points=pts, shares=shares, fx=rate,
+    sig = signals.intraday(list(data.get("prior") or []) + [p for _ts, p in data["points"]], len(data["points"]),
+                           data.get("vwaps"), data.get("day_open"))
+    if "flips" in sig:
+        for f in sig["flips"]:
+            f["t"] = pts[f["idx"]]["t"]
+            f["ts"] = pts[f["idx"]]["ts"]
+    return dict(base, signals=sig, date=data["date"], live=data["live"], points=pts, shares=shares, fx=rate,
                 interval=data.get("interval", "15m"), base_price=base_price, base_value=shares * base_price * rate,
                 error=ierr, fetched_at=dt.datetime.fromtimestamp(data["fetched_at"]).isoformat(timespec="seconds"))
 

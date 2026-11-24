@@ -157,6 +157,8 @@
       <details><summary>Visa som tabell</summary><div class="tablewrap" id="histtable"></div></details>
     </section>
 
+    <section class="card" id="daysig" hidden></section>
+
     <section class="card" id="sigcard">
       <div class="bar"><h2>Nyckeltal och tekniska signaler</h2></div>
       <div id="sigbody"><div class="empty">Laddar…</div></div>
@@ -409,7 +411,7 @@ function renderHolding() {
       ["Anskaffningsvärde", `${fmt(s.cost)} ${home}`, s.avg_cost ? `${fmt(s.avg_cost, 1)} ${home} per ${fund ? "andel" : "aktie"}` : "inga andelar/aktier kvar"],
     ].map(([l, v, sub]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${sub}</div></div>`).join("");
   }
-  renderLots(); drawHoldingChart(); renderHistTable(); renderNavs();
+  renderLots(); drawHoldingChart(); renderHistTable(); renderNavs(); renderDaySignals();
   if (!state.sigLoaded) { state.sigLoaded = true; loadSignals(false); }
 }
 
@@ -459,6 +461,30 @@ async function loadSignals(refresh) {
       beräknade på historiska kurser. De är <b>inte personlig investeringsrådgivning</b> och ingen rekommendation att köpa eller sälja.
       Reglerna tar inte hänsyn till bolagets ekonomi, nyheter, din skatt eller din situation, och historiskt utfall garanterar inget om framtiden.
       Nyckeltal som P/E och utdelning ingår inte, eftersom datakällan bara har kurser.</div>`;
+}
+
+function renderDaySignals() {
+  const box = $("daysig"), i = state.intraday, s = i && i.signals;
+  box.hidden = !(range === -1 && s);
+  if (box.hidden) return;
+  if (s.error) { box.innerHTML = `<div class="bar"><h2>Signaler under dagen</h2></div><div class="empty">${esc(s.error)}</div>`; return; }
+  const v = s.verdict, vcls = v.signal > 0 ? "up" : v.signal < 0 ? "down" : "";
+  const dot = n => `<span class="${n > 0 ? "up" : n < 0 ? "down" : ""}">${n > 0 ? "▲ positiv" : n < 0 ? "▼ negativ" : "■ neutral"}</span>`;
+  const last = i.points.length ? hhmm(i.points[i.points.length - 1]) : "";
+  box.innerHTML = `
+    <div class="bar"><h2>Signaler under dagen</h2></div>
+    <div class="sub">Baserat på ${i.points.length} staplar t.o.m. ${last}${i.live ? "" : " (börsen är stängd, visar senaste handelsdagen)"}</div>
+    <div class="hero ${vcls}" style="font-size:1.6rem">${esc(v.label)}</div>
+    <div class="sub">Poäng ${v.score == null ? "–" : sgn(v.score, 2)} på skalan −1 till +1.</div>
+    <div class="banner err">Yahoo fördröjer ofta svenska kurser med ca 15 minuter, så signalen visar läget som det var för en stund sedan. Den är inte lämplig som underlag för snabba affärer.</div>
+    <div class="tablewrap"><table><thead><tr><th>Regel</th><th>Värde</th><th>Signal</th></tr></thead><tbody>${
+      s.indicators.map(x => `<tr><td>${esc(x.name)}<div class="sub">${esc(x.note)}</div></td><td>${esc(x.value)}</td><td>${dot(x.signal)}</td></tr>`).join("")}</tbody></table></div>
+    <h3 style="margin:14px 0 4px">Signalbyten idag</h3>
+    <div class="tablewrap"><table><tbody>${
+      s.flips.map(f => `<tr><td>${hhmm(f)}</td><td class="${f.signal > 0 ? "up" : f.signal < 0 ? "down" : ""}">${esc(f.label)}</td></tr>`).join("")}</tbody></table></div>
+    <div class="hint"><b>Viktigt:</b> Mekaniska regler på kursstaplar, <b>inte personlig investeringsrådgivning</b> och ingen rekommendation att köpa eller sälja.
+      Daytrading är riskfylld: courtage och spread äter ofta upp små rörelser, och de flesta privatpersoner som daytradar förlorar pengar över tid.
+      Reglerna byter signal ofta i sidledes marknad, och historik garanterar inget.</div>`;
 }
 
 function renderNavs() {
@@ -599,7 +625,7 @@ $("ranges").addEventListener("click", async e => {
   range = +b.dataset.r;
   document.querySelectorAll("#ranges button").forEach(x => x.setAttribute("aria-pressed", x === b));
   if (range === -1 && !(state.intraday && state.intraday.points)) await loadIntraday();
-  drawHoldingChart(); renderHistTable();
+  drawHoldingChart(); renderHistTable(); renderDaySignals();
 });
 $("ivseg").addEventListener("click", async e => {
   const b = e.target.closest("button"); if (!b) return;

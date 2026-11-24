@@ -4,6 +4,21 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [2.0.0] - 2026-11-24
+
+### Tillagt
+- Flera aktier: lägg till bolag från Stockholmsbörsen (t.ex. `VOLV-B.ST`) eller andra börser via sök eller symbol. Valutan hämtas från Yahoo Finance och räknas om till SEK med ECB-kurser (SEK-aktier behöver ingen omräkning).
+- Sida per aktie med allt som Hitachi hade: värde, dagens utveckling, orealiserad/realiserad vinst, diagram med vyn Idag (15 minuter), transaktioner och formulär.
+- Portföljöversikt: totalt värde, dagens förändring (uppdelad i kurs och valuta), vinst, tabell över innehav med andel av portföljen, och diagram över hela portföljens värde över tid.
+- Möjlighet att ta bort en aktie och dess transaktioner.
+- Sensorer för hela portföljen (`sensor.portfolio_*`) och för varje aktie (`sensor.holding_<namn>_*`).
+
+### Ändrat
+- Appen heter nu Portföljtracker (sidopanelen: Portfölj). Slug och data är oförändrade, så din installation uppdateras på plats.
+- Ditt befintliga Hitachi-innehav och alla transaktioner flyttas automatiskt över vid första starten. Hitachis sensorer behåller namnen `sensor.espp_*`.
+- `name`, `symbol` och `price_ccy` i `/data/config.json` används bara för den automatiska överflyttningen. Aktier hanteras nu i appen.
+- Kurser hämtas och sparas per aktie.
+
 ## [1.2.0] - 2026-11-24
 
 ### Tillagt

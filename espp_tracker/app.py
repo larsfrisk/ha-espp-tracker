@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""ESPP-tracker: följ ditt Hitachi-innehav (ESPP) dagligen i SEK.
+"""Portföljtracker: följ dina aktier (t.ex. Hitachi ESPP och Stockholmsbörsen) dagligen i SEK.
 
 Kör:        python3 app.py                -> dashboard på http://127.0.0.1:8765
 Rapport:    python3 app.py --report       -> text-sammanfattning (för cron / Home Assistant)
 Demo:       python3 app.py --demo         -> syntetiska kurser, ingen internetåtkomst behövs
 
-Endast Python 3.9+ standardbibliotek. Dina köp sparas i data/lots.json.
+Endast Python 3.9+ standardbibliotek. Innehav och transaktioner sparas i data/holdings.json och data/lots.json.
 Kurser: Yahoo Finance (inofficiellt chart-API). Valuta: Frankfurter (ECB-kurser).
 """
 import argparse
@@ -14,6 +14,7 @@ import json
 import math
 import os
 import random
+import re
 import sys
 import threading
 import time
@@ -21,6 +22,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -29,14 +31,14 @@ INGRESS = os.environ.get("ESPP_INGRESS") == "1"        # körs som Home Assistan
 INGRESS_PEER = "172.30.32.2"                           # Supervisorns ingress-gateway
 LOTS_FILE = os.path.join(DATA_DIR, "lots.json")
 CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
-INTRADAY_FILE = os.path.join(DATA_DIR, "intraday.json")
-CACHE_FILE = os.path.join(DATA_DIR, "cache.json")
+HOLDINGS_FILE = os.path.join(DATA_DIR, "holdings.json")
 INDEX_FILE = os.path.join(BASE, "index.html")
 
 DEFAULT_CONFIG = {
+    # name/symbol/price_ccy används bara för att flytta över ett gammalt (v1) Hitachi-innehav till holdings.json
     "name": "Hitachi, Ltd.",
-    "symbol": "6501.T",      # Tokyo Stock Exchange. Ändra om dina aktier är t.ex. ADR/OTC.
-    "price_ccy": "JPY",      # valutan aktien handlas i
+    "symbol": "6501.T",
+    "price_ccy": "JPY",
     "home_ccy": "SEK",       # valutan du vill se värdet i
     "update_time": "16:30",   # daglig kurshämtning (lokal tid), efter Tokyo-stängning och ECB-kurser
     "publish_minutes": 15,    # hur ofta sensorer skickas till HA (använder sparade kurser, hämtar inget nytt)
@@ -70,8 +72,54 @@ def load_config():
     return cfg
 
 
+def _slug(text):
+    t = text.lower().replace("å", "a").replace("ä", "a").replace("ö", "o")
+    return re.sub(r"[^a-z0-9]+", "-", t).strip("-")[:24].strip("-") or "aktie"
+
+
+def load_holdings():
+    hs = _read_json(HOLDINGS_FILE, None)
+    if hs is None:
+        # Flytta över ett gammalt (v1) Hitachi-innehav om transaktioner redan finns
+        hs = []
+        if _read_json(LOTS_FILE, []):
+            cfg = load_config()
+            hs = [{"id": "hitachi", "name": cfg["name"], "symbol": cfg["symbol"],
+                   "price_ccy": cfg["price_ccy"], "sensor_prefix": "espp"}]
+            _write_json(HOLDINGS_FILE, hs)
+    return hs
+
+
+def save_holdings(hs):
+    _write_json(HOLDINGS_FILE, hs)
+
+
+def find_holding(hid):
+    return next((h for h in load_holdings() if h["id"] == hid), None)
+
+
+def holding_cfg(h):
+    cfg = load_config()
+    cfg.update(id=h["id"], name=h["name"], symbol=h["symbol"], price_ccy=h["price_ccy"])
+    return cfg
+
+
+def cache_path(h, kind="cache"):
+    return os.path.join(DATA_DIR, "%s_%s.json" % (kind, h["id"]))
+
+
 def load_lots():
-    return _read_json(LOTS_FILE, [])
+    """Alla transaktioner; äldre utan 'holding' hör till första innehavet."""
+    hs = load_holdings()
+    default = hs[0]["id"] if hs else "hitachi"
+    lots = _read_json(LOTS_FILE, [])
+    for l in lots:
+        l.setdefault("holding", default)
+    return lots
+
+
+def lots_for(hid, lots):
+    return [l for l in lots if l.get("holding") == hid]
 
 
 def save_lots(lots):
@@ -117,18 +165,90 @@ def fetch_fx(base, quote, start):
     return {d: float(v[quote]) for d, v in rates.items()}
 
 
-def demo_data(start):
-    rnd = random.Random(42)
+def demo_data(start, cfg):
+    seed = zlib.crc32(cfg["symbol"].encode())
+    rnd = random.Random(seed)
+    jpy = cfg["price_ccy"] == "JPY"
     prices, fx = {}, {}
-    d, p, r = start, 4200.0, 0.0680
+    d, p = start, 4200.0 if jpy else 80.0 + seed % 300
+    r = {"JPY": 0.0680, "USD": 10.5, "EUR": 11.2}.get(cfg["price_ccy"], 1.0)
     while d <= dt.date.today():
         if d.weekday() < 5:
-            p *= math.exp(rnd.gauss(0.0004, 0.014))
+            p *= math.exp(rnd.gauss(0.0004, 0.014 if jpy else 0.012))
             r *= math.exp(rnd.gauss(0.0, 0.003))
             prices[d.isoformat()] = round(p, 1)
-            fx[d.isoformat()] = round(r, 5)
+            if cfg["price_ccy"] != cfg["home_ccy"]:
+                fx[d.isoformat()] = round(r, 5)
         d += dt.timedelta(days=1)
-    return prices, fx, {"currency": "JPY", "exchange": "DEMO"}
+    return prices, fx, {"currency": cfg["price_ccy"], "exchange": "DEMO"}
+
+
+DEMO_SEARCH = [("VOLV-B.ST", "Volvo AB ser. B", "Stockholm", "SEK"), ("ERIC-B.ST", "Telefonaktiebolaget LM Ericsson ser. B", "Stockholm", "SEK"),
+               ("INVE-B.ST", "Investor AB ser. B", "Stockholm", "SEK"), ("HM-B.ST", "H & M Hennes & Mauritz AB ser. B", "Stockholm", "SEK"),
+               ("SEB-A.ST", "Skandinaviska Enskilda Banken ser. A", "Stockholm", "SEK"), ("ABB.ST", "ABB Ltd", "Stockholm", "SEK"),
+               ("AAPL", "Apple Inc.", "NASDAQ", "USD")]
+
+
+def lookup_symbol(sym):
+    """Kontrollerar symbolen hos Yahoo Finance. Returnerar namn och valuta."""
+    if DEMO:
+        for s_, n, _e, c in DEMO_SEARCH:
+            if s_ == sym:
+                return {"name": n, "currency": c}
+        raise ValueError("Hittar ingen aktie med symbolen %s (demo)" % sym)
+    url = "https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=1d&range=5d" % urllib.parse.quote(sym)
+    try:
+        meta = _http_json(url)["chart"]["result"][0]["meta"]
+    except urllib.error.HTTPError:
+        raise ValueError("Hittar ingen aktie med symbolen %s hos Yahoo Finance" % sym)
+    except Exception as e:
+        raise ValueError("Kunde inte kontrollera symbolen just nu (%s)" % e)
+    ccy = meta.get("currency")
+    if not ccy:
+        raise ValueError("Yahoo Finance gav ingen valuta för %s" % sym)
+    if ccy in ("GBp", "GBX", "ZAc", "ILA"):
+        raise ValueError("Aktier som noteras i %s (delenhet) stöds inte än" % ccy)
+    return {"name": meta.get("longName") or meta.get("shortName") or sym, "currency": ccy.upper()}
+
+
+def search_symbols(q):
+    """Sök bolag hos Yahoo Finance. Stockholmsbörsen (.ST) sorteras först."""
+    q = q.strip()[:40]
+    if DEMO:
+        out = [{"symbol": s_, "name": n, "exchange": e} for s_, n, e, _c in DEMO_SEARCH
+               if q.lower() in n.lower() or q.lower() in s_.lower()]
+    else:
+        url = "https://query1.finance.yahoo.com/v1/finance/search?q=%s&quotesCount=10&newsCount=0&listsCount=0" % urllib.parse.quote(q)
+        out = [{"symbol": x["symbol"], "name": x.get("shortname") or x.get("longname") or x["symbol"],
+                "exchange": x.get("exchDisp") or x.get("exchange") or ""}
+               for x in _http_json(url).get("quotes", []) if x.get("quoteType") in ("EQUITY", "ETF") and x.get("symbol")]
+    return sorted(out, key=lambda r: not r["symbol"].endswith(".ST"))
+
+
+def add_holding(body):
+    sym = str(body.get("symbol", "")).strip().upper()
+    if not re.fullmatch(r"[A-Z0-9][A-Z0-9.\-=^]{0,19}", sym):
+        raise ValueError("Ogiltig symbol. Stockholmsbörsen slutar på .ST, till exempel VOLV-B.ST")
+    hs = load_holdings()
+    if any(h["symbol"].upper() == sym for h in hs):
+        raise ValueError("Du har redan lagt till %s" % sym)
+    info = lookup_symbol(sym)
+    home = load_config()["home_ccy"]
+    if info["currency"] != home and not DEMO:
+        try:
+            fetch_fx(info["currency"], home, dt.date.today() - dt.timedelta(days=7))
+        except Exception:
+            raise ValueError("Valutan %s kan inte räknas om till %s (ECB-kurser saknas)" % (info["currency"], home))
+    name = (str(body.get("name") or "").strip() or info["name"])[:60]
+    base = _slug(name)
+    hid, n = base, 2
+    while any(h["id"] == hid for h in hs):
+        hid, n = "%s-%d" % (base, n), n + 1
+    h = {"id": hid, "name": name, "symbol": sym, "price_ccy": info["currency"],
+         "sensor_prefix": "holding_" + hid.replace("-", "_")}
+    hs.append(h)
+    save_holdings(hs)
+    return h
 
 
 def _hhmm(cfg):
@@ -158,9 +278,9 @@ def next_due(now_ts, cfg):
 CACHE_VERSION = 2
 
 
-def get_market(cfg, start):
+def get_market(cfg, start, cache_file):
     """Hämtar (med cache) kurser och valuta. Returnerar (prices, fx, meta, fetched_at, error)."""
-    cache = _read_json(CACHE_FILE, {})
+    cache = _read_json(cache_file, {})
     now = time.time()
     key = (cfg["symbol"], cfg["price_ccy"], cfg["home_ccy"])
     fresh = (
@@ -173,12 +293,12 @@ def get_market(cfg, start):
     if fresh:
         return cache["prices"], cache["fx"], cache["meta"], cache["fetched_at"], None
     if DEMO:
-        p, f, m = demo_data(start)
+        p, f, m = demo_data(start, cfg)
         return p, f, m, now, None
     try:
         prices, meta = fetch_prices(cfg["symbol"], start)
         fx = fetch_fx(cfg["price_ccy"], cfg["home_ccy"], start - dt.timedelta(days=7))
-        _write_json(CACHE_FILE, {"v": CACHE_VERSION, "key": list(key), "start": start.isoformat(), "fetched_at": now,
+        _write_json(cache_file, {"v": CACHE_VERSION, "key": list(key), "start": start.isoformat(), "fetched_at": now,
                                  "prices": prices, "fx": fx, "meta": meta})
         return prices, fx, meta, now, None
     except Exception as e:  # nätverk, ändrat API, osv.
@@ -295,6 +415,15 @@ def compute(lots, cfg, prices, fx):
 
 
 def check_sequence(lots):
+    """Kontrollerar varje innehav för sig."""
+    by = {}
+    for l in lots:
+        by.setdefault(l.get("holding"), []).append(l)
+    for group in by.values():
+        _check_one(group)
+
+
+def _check_one(lots):
     """Kastar ValueError om du någon gång skulle sälja fler aktier än du äger."""
     held = 0.0
     for l in sorted(lots, key=lambda x: (x["date"], 0 if x.get("type", "buy") == "buy" else 1)):
@@ -309,17 +438,78 @@ def _start(lots):
     return first - dt.timedelta(days=10)
 
 
-def build_summary():
-    cfg = load_config()
-    lots = load_lots()
-    start = _start(lots)
-    prices, fx, meta, fetched_at, err = get_market(cfg, start)
+def build_summary(h, refresh=False):
+    cfg = holding_cfg(h)
+    lots = lots_for(h["id"], load_lots())
+    if refresh and not DEMO:
+        try:
+            os.remove(cache_path(h))
+        except FileNotFoundError:
+            pass
+    prices, fx, meta, fetched_at, err = get_market(cfg, _start(lots), cache_path(h))
     summ = compute(lots, cfg, prices, fx)
     return {
-        "config": cfg, "meta": meta, "demo": DEMO, "error": err,
+        "holding": h, "config": cfg, "meta": meta, "demo": DEMO, "error": err,
         "fetched_at": dt.datetime.fromtimestamp(fetched_at).isoformat(timespec="seconds"),
         "summary": summ, "has_lots": bool(lots),
         "next_update": next_due(time.time(), cfg).isoformat(timespec="minutes"),
+    }
+
+
+def _merge_histories(hists):
+    """Summerar värde och anskaffningsvärde per dag; saknad dag fylls med senaste kända värde."""
+    hs = [h for h in hists if h]
+    if not hs:
+        return []
+    ptr, cur, out = [0] * len(hs), [(0.0, 0.0)] * len(hs), []
+    for d in sorted({p["d"] for h in hs for p in h}):
+        for k, h in enumerate(hs):
+            while ptr[k] < len(h) and h[ptr[k]]["d"] <= d:
+                cur[k] = (h[ptr[k]]["value"], h[ptr[k]]["invested"])
+                ptr[k] += 1
+        out.append({"d": d, "value": sum(c[0] for c in cur), "invested": sum(c[1] for c in cur)})
+    return out
+
+
+def build_portfolio(refresh=False):
+    cfg = load_config()
+    rows, errors, hists, fetched = [], [], [], []
+    for h in load_holdings():
+        d = build_summary(h, refresh)
+        s = d["summary"]
+        fetched.append(d["fetched_at"])
+        if d["error"]:
+            errors.append("%s: %s" % (h["name"], d["error"]))
+        row = {"id": h["id"], "name": h["name"], "symbol": h["symbol"], "price_ccy": h["price_ccy"],
+               "sensor_prefix": h.get("sensor_prefix"), "has_lots": d["has_lots"], "has_prices": bool(s),
+               "shares": 0.0, "value": 0.0, "cost": 0.0, "gain": 0.0, "gain_pct": None, "realized": 0.0,
+               "total": 0.0, "day_change": 0.0, "day_pct": None, "price_pct": None, "price": None,
+               "fx": None, "as_of": None, "price_effect": 0.0, "fx_effect": 0.0}
+        if s:
+            row.update(shares=s["shares"], value=s["value"], cost=s["cost"], gain=s["gain"], gain_pct=s["gain_pct"],
+                       realized=s["realized"], total=s["total"], day_change=s["day"]["change"], day_pct=s["day"]["pct"],
+                       price_pct=s["day"]["price_pct"], price=s["price"], fx=s["fx"], as_of=s["as_of"],
+                       price_effect=s["day"]["price_effect"], fx_effect=s["day"]["fx_effect"])
+            hists.append(s["history"])
+        rows.append(row)
+    rows.sort(key=lambda r: -r["value"])
+    tv = sum(r["value"] for r in rows)
+    tc = sum(r["cost"] for r in rows)
+    dc = sum(r["day_change"] for r in rows)
+    gain = sum(r["gain"] for r in rows)
+    realized = sum(r["realized"] for r in rows)
+    for r in rows:
+        r["weight"] = r["value"] / tv * 100 if tv else 0.0
+    prev = tv - dc
+    return {
+        "config": cfg, "demo": DEMO, "errors": errors, "holdings": rows, "history": _merge_histories(hists),
+        "fetched_at": max(fetched) if fetched else None,
+        "next_update": next_due(time.time(), cfg).isoformat(timespec="minutes"),
+        "totals": {"value": tv, "cost": tc, "gain": gain, "gain_pct": gain / tc * 100 if tc else None,
+                   "realized": realized, "total": gain + realized,
+                   "day": {"change": dc, "pct": dc / prev * 100 if prev else None,
+                           "price_effect": sum(r["price_effect"] for r in rows),
+                           "fx_effect": sum(r["fx_effect"] for r in rows)}},
     }
 
 
@@ -344,8 +534,8 @@ def fetch_intraday(symbol):
     return {"date": last, "live": live, "points": sorted(days[last])}
 
 
-def demo_intraday(base_price):
-    rnd = random.Random(7)
+def demo_intraday(base_price, symbol=""):
+    rnd = random.Random(zlib.crc32(symbol.encode()) + 7)
     start = dt.datetime.combine(dt.date.today(), dt.time(0, 0), dt.timezone.utc)   # 09:00 JST
     p, pts = base_price * 0.99, []
     for i in range(27):                                                            # till 15:30 JST
@@ -354,11 +544,11 @@ def demo_intraday(base_price):
     return {"date": dt.date.today().isoformat(), "live": False, "points": pts, "fetched_at": time.time()}
 
 
-def get_intraday(cfg, last_close, refresh=False):
+def get_intraday(cfg, last_close, refresh, cache_file):
     """(data, fel). 15 min cache under pågående handel, 60 min annars."""
     if DEMO:
-        return demo_intraday(last_close), None
-    cache = _read_json(INTRADAY_FILE, {})
+        return demo_intraday(last_close, cfg["symbol"]), None
+    cache = _read_json(cache_file, {})
     now = time.time()
     same = cache.get("symbol") == cfg["symbol"] and bool(cache.get("points"))
     if same and not refresh and now - cache.get("fetched_at", 0) < (900 if cache.get("live") else 3600):
@@ -366,7 +556,7 @@ def get_intraday(cfg, last_close, refresh=False):
     try:
         data = fetch_intraday(cfg["symbol"])
         data.update({"symbol": cfg["symbol"], "fetched_at": now})
-        _write_json(INTRADAY_FILE, data)
+        _write_json(cache_file, data)
         return data, None
     except Exception as e:
         if same:
@@ -374,10 +564,10 @@ def get_intraday(cfg, last_close, refresh=False):
         return None, "Kunde inte hämta intradagskurser: %s" % e
 
 
-def build_intraday(refresh=False):
-    cfg = load_config()
-    lots = load_lots()
-    prices, fx, _meta, _t, err = get_market(cfg, _start(lots))
+def build_intraday(h, refresh=False):
+    cfg = holding_cfg(h)
+    lots = lots_for(h["id"], load_lots())
+    prices, fx, _meta, _t, err = get_market(cfg, _start(lots), cache_path(h))
     base = {"points": [], "price_ccy": cfg["price_ccy"], "home_ccy": cfg["home_ccy"]}
     if not prices:
         return dict(base, error=err or "Inga kurser tillgängliga")
@@ -385,7 +575,7 @@ def build_intraday(refresh=False):
     P = Series(prices)
     rate = Series(fx).at(P.keys[-1]) if cfg["price_ccy"] != cfg["home_ccy"] else 1.0
     shares = summ["shares"] if summ else 0.0
-    data, ierr = get_intraday(cfg, P.at(P.keys[-1]), refresh)
+    data, ierr = get_intraday(cfg, P.at(P.keys[-1]), refresh, cache_path(h, "intraday"))
     if not data:
         return dict(base, error=ierr)
     before = (dt.date.fromisoformat(data["date"]) - dt.timedelta(days=1)).isoformat()
@@ -399,7 +589,10 @@ def build_intraday(refresh=False):
 
 # ---------------------------------------------------------------- lot-validering
 
-def validate_lot(body):
+def validate_lot(body, holdings):
+    hid = body.get("holding") or (holdings[0]["id"] if len(holdings) == 1 else None)
+    if hid not in [h["id"] for h in holdings]:
+        raise ValueError("Okänt innehav")
     try:
         date = dt.date.fromisoformat(str(body.get("date", "")))
     except ValueError:
@@ -426,13 +619,16 @@ def validate_lot(body):
         raise ValueError("Ogiltig typ")
     shares = num("shares", required=True)
     price = num("price")
-    lot = {"id": uuid.uuid4().hex[:8], "type": typ, "date": date.isoformat(), "shares": shares,
+    lot = {"id": uuid.uuid4().hex[:8], "holding": hid, "type": typ, "date": date.isoformat(), "shares": shares,
            "price": price, "note": str(body.get("note", ""))[:80]}
     lot["paid" if typ == "buy" else "received"] = num("paid" if typ == "buy" else "received", positive=False)
     return lot
 
 
 # ---------------------------------------------------------------- HTTP
+
+RE_HOLDING_API = re.compile(r"^/api/holdings/([a-z0-9_-]+)/(summary|intraday)$")
+
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "ESPPTracker/1.0"
@@ -471,40 +667,56 @@ class Handler(BaseHTTPRequestHandler):
         if not self._allowed():
             return self._send(403, {"error": "Otillåten förfrågan"})
         path = urllib.parse.urlparse(self.path)
+        qs = urllib.parse.parse_qs(path.query)
+        refresh = bool(qs.get("refresh"))
         if path.path == "/":
             with open(INDEX_FILE, "rb") as f:
                 return self._send(200, f.read(), "text/html; charset=utf-8")
-        if path.path == "/api/summary":
-            qs = urllib.parse.parse_qs(path.query)
-            if qs.get("refresh") and not DEMO:
-                try:
-                    os.remove(CACHE_FILE)
-                except FileNotFoundError:
-                    pass
+        if path.path == "/api/portfolio":
             with LOCK:
-                return self._send(200, build_summary())
-        if path.path == "/api/intraday":
+                return self._send(200, build_portfolio(refresh))
+        if path.path == "/api/search":
+            q = (qs.get("q") or [""])[0]
+            if len(q.strip()) < 2:
+                return self._send(400, {"error": "Skriv minst två tecken"})
+            try:
+                return self._send(200, {"results": search_symbols(q)})
+            except Exception as e:
+                return self._send(502, {"error": "Sökningen misslyckades (%s). Skriv symbolen direkt i stället." % e})
+        m = RE_HOLDING_API.match(path.path)
+        if m:
+            h = find_holding(m.group(1))
+            if not h:
+                return self._send(404, {"error": "Innehavet finns inte"})
             with LOCK:
-                return self._send(200, build_intraday(refresh=bool(urllib.parse.parse_qs(path.query).get("refresh"))))
+                return self._send(200, build_summary(h, refresh) if m.group(2) == "summary" else build_intraday(h, refresh))
         self._send(404, {"error": "Hittades inte"})
 
     def do_POST(self):
         if not self._allowed(write=True):
             return self._send(403, {"error": "Otillåten förfrågan"})
+        try:
+            body = self._body()
+        except (ValueError, json.JSONDecodeError) as e:
+            return self._send(400, {"error": str(e)})
         if self.path == "/api/lots":
-            try:
-                lot = validate_lot(self._body())
-            except (ValueError, json.JSONDecodeError) as e:
-                return self._send(400, {"error": str(e)})
             with LOCK:
-                lots = load_lots()
-                lots.append(lot)
                 try:
+                    lot = validate_lot(body, load_holdings())
+                    lots = load_lots()
+                    lots.append(lot)
                     check_sequence(lots)
                 except ValueError as e:
                     return self._send(400, {"error": str(e)})
                 save_lots(lots)
             return self._send(201, lot)
+        if self.path == "/api/holdings":
+            with LOCK:
+                try:
+                    h = add_holding(body)
+                except ValueError as e:
+                    return self._send(400, {"error": str(e)})
+            return self._send(201, h)
         self._send(404, {"error": "Hittades inte"})
 
     def do_DELETE(self):
@@ -523,49 +735,75 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(409, {"error": "Kan inte ta bort: " + str(e)})
                 save_lots(keep)
             return self._send(200, {"ok": True})
+        m = re.match(r"^/api/holdings/([a-z0-9_-]+)$", self.path)
+        if m:
+            with LOCK:
+                hs, lots = load_holdings(), load_lots()
+                if not any(h["id"] == m.group(1) for h in hs):
+                    return self._send(404, {"error": "Innehavet finns inte"})
+                save_lots([l for l in lots if l["holding"] != m.group(1)])
+                save_holdings([h for h in hs if h["id"] != m.group(1)])
+            return self._send(200, {"ok": True})
         self._send(404, {"error": "Hittades inte"})
 
 
 # ---------------------------------------------------------------- Home Assistant-sensorer
+
+def _post_state(token, key, name, val, unit, nd, icon, as_of=None):
+    if val is None:
+        return
+    attrs = {"friendly_name": name, "icon": icon, "state_class": "measurement"}
+    if as_of:
+        attrs["as_of"] = as_of
+    if unit:
+        attrs["unit_of_measurement"] = unit
+    req = urllib.request.Request(
+        "http://supervisor/core/api/states/sensor." + key,
+        data=json.dumps({"state": str(round(val, nd)), "attributes": attrs}).encode(),
+        headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+        method="POST")
+    try:
+        urllib.request.urlopen(req, timeout=10).read()
+    except Exception as e:
+        print("Kunde inte publicera %s: %s" % (key, e), flush=True)
+
 
 def publish_to_ha():
     """Skickar sensorer till HA via Supervisorns proxy (kräver homeassistant_api: true)."""
     token = os.environ.get("SUPERVISOR_TOKEN")
     if not token:
         return
-    data = build_summary()
-    s, cfg = data["summary"], data["config"]
-    if not s:
-        return
-    home, pc = cfg["home_ccy"], cfg["price_ccy"]
-    sensors = {
-        "espp_value": ("ESPP värde", s["value"], home, 0, "mdi:chart-line"),
-        "espp_day_change": ("ESPP förändring idag", s["day"]["change"], home, 0, "mdi:trending-up"),
-        "espp_day_change_pct": ("ESPP förändring idag %", s["day"]["pct"], "%", 2, "mdi:percent"),
-        "espp_unrealized_gain": ("ESPP orealiserad vinst", s["gain"], home, 0, "mdi:cash-plus"),
-        "espp_unrealized_gain_pct": ("ESPP orealiserad vinst %", s["gain_pct"], "%", 2, "mdi:percent"),
-        "espp_realized_gain": ("ESPP realiserad vinst", s["realized"], home, 0, "mdi:cash-check"),
-        "espp_total_gain": ("ESPP total vinst", s["total"], home, 0, "mdi:cash-multiple"),
-        "espp_cost": ("ESPP anskaffningsvärde", s["cost"], home, 0, "mdi:cash"),
-        "espp_shares": ("ESPP antal aktier", s["shares"], "st", 3, "mdi:numeric"),
-        "espp_price": ("ESPP aktiekurs", s["price"], pc, 1, "mdi:currency-jpy"),
-        "espp_fx": ("ESPP %s/%s" % (pc, home), s["fx"], None, 5, "mdi:swap-horizontal"),
-    }
-    for key, (name, val, unit, nd, icon) in sensors.items():
-        if val is None:
+    p = build_portfolio()
+    home = p["config"]["home_ccy"]
+    t = p["totals"]
+    for key, name, val, unit, nd, icon in [
+        ("portfolio_value", "Portfölj värde", t["value"], home, 0, "mdi:wallet"),
+        ("portfolio_day_change", "Portfölj förändring idag", t["day"]["change"], home, 0, "mdi:trending-up"),
+        ("portfolio_day_change_pct", "Portfölj förändring idag %", t["day"]["pct"], "%", 2, "mdi:percent"),
+        ("portfolio_unrealized_gain", "Portfölj orealiserad vinst", t["gain"], home, 0, "mdi:cash-plus"),
+        ("portfolio_realized_gain", "Portfölj realiserad vinst", t["realized"], home, 0, "mdi:cash-check"),
+        ("portfolio_total_gain", "Portfölj total vinst", t["total"], home, 0, "mdi:cash-multiple"),
+        ("portfolio_cost", "Portfölj anskaffningsvärde", t["cost"], home, 0, "mdi:cash"),
+    ]:
+        _post_state(token, key, name, val, unit, nd, icon)
+    for r in p["holdings"]:
+        if not r["has_prices"] or not r["sensor_prefix"]:
             continue
-        attrs = {"friendly_name": name, "icon": icon, "as_of": s["as_of"], "state_class": "measurement"}
-        if unit:
-            attrs["unit_of_measurement"] = unit
-        req = urllib.request.Request(
-            "http://supervisor/core/api/states/sensor." + key,
-            data=json.dumps({"state": str(round(val, nd)), "attributes": attrs}).encode(),
-            headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
-            method="POST")
-        try:
-            urllib.request.urlopen(req, timeout=10).read()
-        except Exception as e:
-            print("Kunde inte publicera %s: %s" % (key, e), flush=True)
+        k, n, ccy, asof = r["sensor_prefix"], r["name"], r["price_ccy"], r["as_of"]
+        for suffix, label, val, unit, nd, icon in [
+            ("value", "värde", r["value"], home, 0, "mdi:chart-line"),
+            ("day_change", "förändring idag", r["day_change"], home, 0, "mdi:trending-up"),
+            ("day_change_pct", "förändring idag %", r["day_pct"], "%", 2, "mdi:percent"),
+            ("unrealized_gain", "orealiserad vinst", r["gain"], home, 0, "mdi:cash-plus"),
+            ("unrealized_gain_pct", "orealiserad vinst %", r["gain_pct"], "%", 2, "mdi:percent"),
+            ("realized_gain", "realiserad vinst", r["realized"], home, 0, "mdi:cash-check"),
+            ("total_gain", "total vinst", r["total"], home, 0, "mdi:cash-multiple"),
+            ("cost", "anskaffningsvärde", r["cost"], home, 0, "mdi:cash"),
+            ("shares", "antal aktier", r["shares"], "st", 3, "mdi:numeric"),
+            ("price", "aktiekurs", r["price"], ccy, 2, "mdi:currency-usd"),
+            ("fx", "%s/%s" % (ccy, home), r["fx"] if ccy != home else None, None, 5, "mdi:swap-horizontal"),
+        ]:
+            _post_state(token, "%s_%s" % (k, suffix), "%s %s" % (n, label), val, unit, nd, icon, asof)
 
 
 def publisher_loop():
@@ -586,53 +824,65 @@ def sek(x, sign=False):
 
 
 def report():
-    data = build_summary()
-    s = data["summary"]
-    if not s:
-        print("Inga kurser tillgängliga. " + (data["error"] or ""))
-        return 1
-    cfg = data["config"]
-    home = cfg["home_ccy"]
-    d = s["day"]
+    p = build_portfolio()
+    home = p["config"]["home_ccy"]
     pct = lambda v: "–" if v is None else f"{v:+.2f} %"
-    print(f"{cfg['name']} ({cfg['symbol']}) – {s['as_of']}")
-    print(f"Kurs: {s['price']:,.1f} {cfg['price_ccy']} ({pct(d['price_pct'])})   "
-          f"{cfg['price_ccy']}/{home}: {s['fx']:.5f}")
-    print(f"Innehav: {s['shares']:g} aktier  =  {sek(s['value'])} {home}")
-    print(f"Idag: {sek(d['change'], True)} {home} ({pct(d['pct'])})  "
-          f"[kurs {sek(d['price_effect'], True)}, valuta {sek(d['fx_effect'], True)}]")
-    print(f"Orealiserat: {sek(s['gain'], True)} {home} ({pct(s['gain_pct'])}) mot anskaffningsvärde {sek(s['cost'])}")
-    if s["realized"]:
-        print(f"Realiserat (sålt): {sek(s['realized'], True)} {home}   Totalt: {sek(s['total'], True)} {home}")
-    if data["error"]:
-        print("OBS: " + data["error"])
+    if not p["holdings"]:
+        print("Inga innehav registrerade.")
+        return 1
+    for r in p["holdings"]:
+        if not r["has_prices"]:
+            print(f"{r['name']} ({r['symbol']}): inga kurser tillgängliga")
+            continue
+        print(f"{r['name']} ({r['symbol']}) {r['as_of']}: kurs {r['price']:,.2f} {r['price_ccy']} ({pct(r['price_pct'])}), "
+              f"{r['shares']:g} st = {sek(r['value'])} {home}, idag {sek(r['day_change'], True)} ({pct(r['day_pct'])}), "
+              f"orealiserat {sek(r['gain'], True)} ({pct(r['gain_pct'])}), realiserat {sek(r['realized'], True)}")
+    t = p["totals"]
+    print(f"PORTFÖLJ: {sek(t['value'])} {home}, idag {sek(t['day']['change'], True)} ({pct(t['day']['pct'])}) "
+          f"[kurs {sek(t['day']['price_effect'], True)}, valuta {sek(t['day']['fx_effect'], True)}], "
+          f"orealiserat {sek(t['gain'], True)} ({pct(t['gain_pct'])}), realiserat {sek(t['realized'], True)}, "
+          f"totalt {sek(t['total'], True)} {home}")
+    for e in p["errors"]:
+        print("OBS: " + e)
     return 0
 
 
+def _demo_setup():
+    t = dt.date.today()
+    day = lambda n: (t - dt.timedelta(days=n)).isoformat()
+    if not os.path.exists(HOLDINGS_FILE):
+        save_holdings([
+            {"id": "hitachi", "name": "Hitachi, Ltd.", "symbol": "6501.T", "price_ccy": "JPY", "sensor_prefix": "espp"},
+            {"id": "volvo-ab-ser-b", "name": "Volvo AB ser. B", "symbol": "VOLV-B.ST", "price_ccy": "SEK", "sensor_prefix": "holding_volvo_ab_ser_b"},
+            {"id": "investor-ab-ser-b", "name": "Investor AB ser. B", "symbol": "INVE-B.ST", "price_ccy": "SEK", "sensor_prefix": "holding_investor_ab_ser_b"},
+        ])
+    if not os.path.exists(LOTS_FILE):
+        b = lambda i, hid, n, sh, paid=None, note="": {"id": "demo%04d" % i, "holding": hid, "date": day(n), "shares": sh,
+                                                       "price": None, "paid": paid, "note": note}
+        save_lots([
+            b(1, "hitachi", 150, 12, 3400, "Demo ESPP 1"), b(2, "hitachi", 90, 12, 3400, "Demo ESPP 2"),
+            b(3, "hitachi", 30, 12, 3400, "Demo ESPP 3"),
+            {"id": "demo0004", "holding": "hitachi", "type": "sell", "date": day(10), "shares": 8,
+             "price": None, "received": None, "note": "Demo – försäljning"},
+            b(5, "volvo-ab-ser-b", 120, 40), b(6, "volvo-ab-ser-b", 45, 25),
+            b(7, "investor-ab-ser-b", 100, 30),
+        ])
+
+
 def main():
-    global DEMO, LOTS_FILE
+    global DEMO, LOTS_FILE, HOLDINGS_FILE
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default="127.0.0.1", help="standard 127.0.0.1 (endast denna dator)")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--report", action="store_true", help="skriv ut daglig sammanfattning och avsluta")
-    ap.add_argument("--demo", action="store_true", help="använd syntetiska kurser (sparar inga köp)")
+    ap.add_argument("--demo", action="store_true", help="använd syntetiska kurser (sparar inga riktiga köp)")
     args = ap.parse_args()
 
     if args.demo:
         DEMO = True
         LOTS_FILE = os.path.join(DATA_DIR, "demo_lots.json")
-        if not os.path.exists(LOTS_FILE):
-            t = dt.date.today()
-            save_lots([
-                {"id": "demo0001", "date": (t - dt.timedelta(days=150)).isoformat(), "shares": 12,
-                 "price": None, "paid": 3400, "note": "Demo – köp 1"},
-                {"id": "demo0002", "date": (t - dt.timedelta(days=90)).isoformat(), "shares": 12,
-                 "price": None, "paid": 3400, "note": "Demo – köp 2"},
-                {"id": "demo0003", "date": (t - dt.timedelta(days=30)).isoformat(), "shares": 12,
-                 "price": None, "paid": 3400, "note": "Demo – köp 3"},
-                {"id": "demo0004", "type": "sell", "date": (t - dt.timedelta(days=10)).isoformat(), "shares": 8,
-                 "price": None, "received": None, "note": "Demo – försäljning"},
-            ])
+        HOLDINGS_FILE = os.path.join(DATA_DIR, "demo_holdings.json")
+        _demo_setup()
 
     if args.report:
         sys.exit(report())
@@ -640,7 +890,7 @@ def main():
     if os.environ.get("SUPERVISOR_TOKEN"):
         threading.Thread(target=publisher_loop, daemon=True).start()
     srv = ThreadingHTTPServer((args.host, args.port), Handler)
-    print(f"ESPP-tracker kör på http://{args.host}:{args.port}  (Ctrl+C för att avsluta)"
+    print(f"Portföljtracker kör på http://{args.host}:{args.port}  (Ctrl+C för att avsluta)"
           + ("  [DEMO]" if DEMO else ""))
     try:
         srv.serve_forever()

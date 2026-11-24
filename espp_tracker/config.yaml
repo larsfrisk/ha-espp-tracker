@@ -1,6 +1,6 @@
-name: "ESPP-tracker"
-description: "Följ ditt Hitachi ESPP-innehav dagligen i SEK, med sensorer till Home Assistant"
-version: "1.2.0"
+name: "Portföljtracker"
+description: "Följ dina aktier (Hitachi ESPP, Stockholmsbörsen m.fl.) i SEK: en sida per aktie, portföljöversikt och sensorer till Home Assistant"
+version: "2.0.0"
 slug: "espp_tracker"
 init: false
 arch:
@@ -11,5 +11,5 @@ boot: auto
 ingress: true
 ingress_port: 8099
 panel_icon: "mdi:chart-line"
-panel_title: "ESPP"
+panel_title: "Portfölj"
 homeassistant_api: true

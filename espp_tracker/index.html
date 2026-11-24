@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ESPP-tracker</title>
+<title>Portfölj</title>
+<link rel="icon" href="data:,">
 <style>
   :root {
     color-scheme: light;
@@ -22,12 +23,21 @@
     }
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--ink);
          font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+  main { max-width: 1000px; margin: 0 auto; padding: 24px 16px 64px; }
   header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
   h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  h2.name { font-size: 20px; margin: 18px 0 0; font-weight: 600; }
   .sub { color: var(--ink2); font-size: 13px; }
+  a { color: var(--series1); text-decoration: none; } a:hover { text-decoration: underline; }
+  code { background: var(--grid); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+  .nav { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+  .nav a { border: 1px solid var(--line); background: var(--surface); color: var(--ink2); padding: 5px 12px; border-radius: 999px;
+           font-size: 13px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nav a:hover { text-decoration: none; border-color: var(--ink3); }
+  .nav a[aria-current="page"] { background: var(--series1); border-color: transparent; color: #fff; }
   .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-top: 16px; }
   .hero { font-size: 40px; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
   .hero small { font-size: 18px; color: var(--ink2); font-weight: 500; margin-left: 4px; }
@@ -44,14 +54,15 @@
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
   .seg button { border: 0; background: transparent; color: var(--ink2); padding: 5px 11px; font: inherit; font-size: 13px; cursor: pointer; }
   .seg button[aria-pressed="true"] { background: var(--series1); color: #fff; }
-  button.btn { border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 7px 12px;
+  button.btn, a.btn { display: inline-block; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 7px 12px;
                border-radius: 8px; font: inherit; cursor: pointer; }
-  button.btn:hover { border-color: var(--ink3); }
+  button.btn:hover, a.btn:hover { border-color: var(--ink3); text-decoration: none; }
   button.primary { background: var(--series1); color: #fff; border-color: transparent; }
+  button.danger { color: var(--bad); }
   .legend { display: flex; gap: 16px; font-size: 13px; color: var(--ink2); margin: 4px 0 6px; }
   .legend i { display: inline-block; width: 18px; height: 0; border-top: 2px solid var(--series1); vertical-align: middle; margin-right: 6px; }
   .legend i.ref { border-top: 2px dashed var(--ref); }
-  #chart { position: relative; }
+  .chart { position: relative; }
   svg { width: 100%; height: auto; display: block; overflow: visible; }
   .axis text { fill: var(--ink3); font-size: 11px; font-variant-numeric: tabular-nums; }
   .tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--line);
@@ -64,79 +75,123 @@
   td .del { border: 0; background: none; color: var(--ink3); cursor: pointer; font-size: 16px; }
   td .del:hover { color: var(--bad); }
   .tablewrap { overflow-x: auto; }
+  .wbar { display: inline-block; vertical-align: middle; width: 70px; height: 6px; border-radius: 3px; background: var(--grid); margin-right: 8px; }
+  .wbar i { display: block; height: 100%; border-radius: 3px; background: var(--series1); }
   form { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; align-items: end; }
   label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--ink2); }
   input, select { font: inherit; padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
   .hint { color: var(--ink2); font-size: 12px; margin-top: 8px; }
-  .banner { border-radius: 10px; padding: 10px 12px; margin-top: 16px; font-size: 13px; border: 1px solid var(--line); background: var(--surface); }
+  .banner { border-radius: 10px; padding: 10px 12px; margin-top: 12px; font-size: 13px; border: 1px solid var(--line); background: var(--surface); }
   .banner.err { border-color: var(--bad); }
   .empty { color: var(--ink2); padding: 28px 0; text-align: center; }
   details summary { cursor: pointer; color: var(--ink2); font-size: 13px; margin-top: 8px; }
+  .results th, .results td { text-align: left; }
+  .results th:last-child, .results td:last-child { text-align: right; }
 </style>
 </head>
 <body>
 <main>
   <header>
-    <div>
-      <h1 id="title">ESPP-tracker</h1>
+    <div style="flex:1 1 320px;min-width:0">
+      <h1>Portfölj</h1>
       <div class="sub" id="asof"></div>
     </div>
-    <div>
-      <button class="btn" id="refresh">↻ Hämta kurser nu</button>
-    </div>
+    <div><button class="btn" id="refresh">↻ Hämta kurser nu</button></div>
   </header>
-
+  <nav class="nav" id="nav" aria-label="Innehav"></nav>
   <div id="banner"></div>
 
-  <section class="card" id="top">
-    <div class="empty">Laddar…</div>
-  </section>
-
-  <section class="kpis" id="kpis"></section>
-
-  <section class="card">
-    <div class="bar">
-      <h2>Värde över tid</h2>
-      <div class="seg" id="ranges" role="group" aria-label="Tidsintervall">
-        <button data-r="-1" aria-pressed="true">Idag</button><button data-r="30">1 mån</button><button data-r="90">3 mån</button>
-        <button data-r="180">6 mån</button><button data-r="0">Allt</button>
+  <!-- ===================== ÖVERSIKT ===================== -->
+  <div class="view" id="view-overview" hidden>
+    <section class="card" id="otop"></section>
+    <section class="kpis" id="okpis"></section>
+    <section class="card">
+      <div class="bar"><h2>Innehav</h2><a class="btn" href="#/add">+ Lägg till aktie</a></div>
+      <div class="tablewrap" id="otable"></div>
+    </section>
+    <section class="card" id="ochartcard">
+      <div class="bar">
+        <h2>Portföljens värde över tid</h2>
+        <div class="seg" id="oranges" role="group" aria-label="Tidsintervall">
+          <button data-r="30">1 mån</button><button data-r="90">3 mån</button>
+          <button data-r="180">6 mån</button><button data-r="0" aria-pressed="true">Allt</button>
+        </div>
       </div>
-    </div>
-    <div class="legend" id="legend"></div>
-    <div class="sub" id="chartnote"></div>
-    <div id="chart"></div>
-    <details>
-      <summary>Visa som tabell</summary>
-      <div class="tablewrap" id="histtable"></div>
-    </details>
-  </section>
+      <div class="legend"><span><i></i>Värde</span><span><i class="ref"></i>Anskaffningsvärde (kvarvarande aktier)</span></div>
+      <div class="sub">Summan av alla innehav, ett värde per dag (stängningskurser).</div>
+      <div class="chart" id="ochart"></div>
+      <details><summary>Visa som tabell</summary><div class="tablewrap" id="ohisttable"></div></details>
+    </section>
+  </div>
 
-  <section class="card">
-    <div class="bar"><h2>Köp och försäljningar</h2></div>
-    <div class="tablewrap" id="lots"></div>
-  </section>
+  <!-- ===================== ETT INNEHAV ===================== -->
+  <div class="view" id="view-holding" hidden>
+    <h2 class="name" id="hname"></h2>
+    <div class="sub" id="hsub"></div>
+    <section class="card" id="top"><div class="empty">Laddar…</div></section>
+    <section class="kpis" id="kpis"></section>
 
-  <section class="card">
-    <div class="bar"><h2>Lägg till transaktion</h2></div>
-    <form id="addform">
-      <label>Typ<select name="type" id="typesel"><option value="buy">Köp</option><option value="sell">Sälj</option></select></label>
-      <label>Datum<input name="date" type="date" required></label>
-      <label>Antal aktier<input name="shares" inputmode="decimal" placeholder="t.ex. 12" required></label>
-      <label><span id="amountlabel">Inbetalt belopp</span> (<span class="home">SEK</span>)<input name="amount" inputmode="decimal" placeholder="valfritt"></label>
-      <label>Kurs (<span class="pccy">JPY</span>)<input name="price" inputmode="decimal" placeholder="valfritt"></label>
-      <label>Anteckning<input name="note" maxlength="80" placeholder="t.ex. ESPP jan"></label>
-      <button class="btn primary" type="submit">Lägg till</button>
-    </form>
-    <div class="hint">
-      Skriv av datum, antal och belopp från JP Morgans transaktionshistorik.
-      <b>Köp:</b> inbetalt belopp i <span class="home">SEK</span> (0 för gratisaktier/matchning).
-      <b>Sälj:</b> beloppet du fick efter avgifter, omräknat till <span class="home">SEK</span>.
-      Lämnar du beloppet tomt räknas det ut från kursen på dagen.
-      Vinst vid försäljning räknas med <b>genomsnittsmetoden</b> (snittkostnad per aktie för det du äger).
-      Det här är en uppföljning, inte skatteunderlag – kontrollera mot dina kontrolluppgifter.
-    </div>
-    <div class="banner err" id="formerr" style="display:none"></div>
-  </section>
+    <section class="card">
+      <div class="bar">
+        <h2>Värde över tid</h2>
+        <div class="seg" id="ranges" role="group" aria-label="Tidsintervall">
+          <button data-r="-1" aria-pressed="true">Idag</button><button data-r="30">1 mån</button><button data-r="90">3 mån</button>
+          <button data-r="180">6 mån</button><button data-r="0">Allt</button>
+        </div>
+      </div>
+      <div class="legend" id="legend"></div>
+      <div class="sub" id="chartnote"></div>
+      <div class="chart" id="chart"></div>
+      <details><summary>Visa som tabell</summary><div class="tablewrap" id="histtable"></div></details>
+    </section>
+
+    <section class="card">
+      <div class="bar"><h2>Köp och försäljningar</h2></div>
+      <div class="tablewrap" id="lots"></div>
+    </section>
+
+    <section class="card">
+      <div class="bar"><h2>Lägg till transaktion</h2></div>
+      <form id="addform">
+        <label>Typ<select name="type" id="typesel"><option value="buy">Köp</option><option value="sell">Sälj</option></select></label>
+        <label>Datum<input name="date" type="date" required></label>
+        <label>Antal aktier<input name="shares" inputmode="decimal" placeholder="t.ex. 12" required></label>
+        <label><span><span id="amountlabel">Inbetalt belopp</span> (<span class="home">SEK</span>)</span><input name="amount" inputmode="decimal" placeholder="valfritt"></label>
+        <label><span>Kurs (<span class="pccy">JPY</span>)</span><input name="price" inputmode="decimal" placeholder="valfritt"></label>
+        <label>Anteckning<input name="note" maxlength="80" placeholder="t.ex. ESPP jan"></label>
+        <button class="btn primary" type="submit">Lägg till</button>
+      </form>
+      <div class="hint">
+        Skriv av datum, antal och belopp från din förvaltares transaktionshistorik (t.ex. JP Morgan eller banken).
+        <b>Köp:</b> inbetalt belopp i <span class="home">SEK</span> (0 för gratisaktier/matchning).
+        <b>Sälj:</b> beloppet du fick efter avgifter, omräknat till <span class="home">SEK</span>.
+        Lämnar du beloppet tomt räknas det ut från kursen på dagen.
+        Vinst vid försäljning räknas med <b>genomsnittsmetoden</b> (snittkostnad per aktie för det du äger).
+        Det här är en uppföljning, inte skatteunderlag – kontrollera mot dina kontrolluppgifter.
+      </div>
+      <div class="banner err" id="formerr" hidden></div>
+    </section>
+
+    <p><button class="btn danger" id="delholding">Ta bort aktien från portföljen…</button></p>
+  </div>
+
+  <!-- ===================== LÄGG TILL AKTIE ===================== -->
+  <div class="view" id="view-add" hidden>
+    <section class="card">
+      <div class="bar"><h2>Lägg till aktie</h2></div>
+      <form id="searchform">
+        <label>Sök bolag eller skriv symbol<input id="q" placeholder="t.ex. Volvo eller VOLV-B.ST" autocomplete="off" required></label>
+        <button class="btn primary" type="submit">Sök</button>
+        <button class="btn" type="button" id="addsym">Lägg till symbolen direkt</button>
+      </form>
+      <div class="hint">
+        Stockholmsbörsen har suffixet <code>.ST</code>, till exempel <code>VOLV-B.ST</code>, <code>INVE-B.ST</code> eller <code>ERIC-B.ST</code>.
+        Andra börser går också om Yahoo Finance har dem och valutan kan räknas om till kronor.
+      </div>
+      <div class="banner err" id="adderr" hidden></div>
+      <div class="tablewrap results" id="results"></div>
+    </section>
+  </div>
 </main>
 
 <script>
@@ -147,88 +202,164 @@ const pct = (n) => n == null ? "–" : sgn(n, 2) + " %";
 const cls = (n) => n > 0 ? "up" : n < 0 ? "down" : "";
 const arrow = (n) => n > 0 ? "▲" : n < 0 ? "▼" : "■";
 const esc = (s) => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const $ = (id) => document.getElementById(id);
 
-let state = null, range = -1;   // -1 = Idag (15 min)
+let portfolio = null;      // /api/portfolio
+let state = null;          // aktuellt innehav (/api/holdings/<id>/summary)
+let range = -1;            // innehav: -1 = Idag (15 min), 0 = Allt, annars dagar
+let oRange = 0;            // översikt
 
-async function load(refresh) {
-  const r = await fetch("api/summary" + (refresh ? "?refresh=1" : ""));
-  state = await r.json();
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  let j = {};
+  try { j = await r.json(); } catch (e) { /* tomt svar */ }
+  if (!r.ok) throw new Error(j.error || "Något gick fel (" + r.status + ")");
+  return j;
+}
+const postJson = (path, body) => api(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+
+function route() {
+  const m = location.hash.match(/^#\/h\/([\w-]+)/);
+  if (m) return {v: "holding", id: m[1]};
+  if (location.hash === "#/add") return {v: "add"};
+  return {v: "overview"};
+}
+
+async function show(refresh) {
+  const rt = route();
+  try {
+    if (!portfolio || refresh || rt.v === "overview") portfolio = await api("api/portfolio" + (refresh ? "?refresh=1" : ""));
+    renderNav(rt);
+    document.querySelectorAll(".view").forEach(v => v.hidden = v.id !== "view-" + rt.v);
+    $("banner").innerHTML = "";
+    if (portfolio.demo) banner("Demoläge: kurserna är påhittade och inget sparas på riktigt.", false);
+    if (rt.v === "overview") renderOverview();
+    else if (rt.v === "holding") await showHolding(rt.id, refresh);
+    else { $("asof").textContent = ""; $("q").focus(); }
+  } catch (e) {
+    banner(e.message, true);
+  }
+}
+function banner(text, err) { $("banner").insertAdjacentHTML("beforeend", `<div class="banner${err ? " err" : ""}">${esc(text)}</div>`); }
+
+function renderNav(rt) {
+  const cur = (ok) => ok ? ' aria-current="page"' : "";
+  $("nav").innerHTML = `<a href="#/"${cur(rt.v === "overview")}>Översikt</a>` +
+    portfolio.holdings.map(h => `<a href="#/h/${esc(h.id)}" title="${esc(h.name)} (${esc(h.symbol)})"${cur(rt.v === "holding" && rt.id === h.id)}>${esc(h.name)}</a>`).join("") +
+    `<a href="#/add"${cur(rt.v === "add")}>+ Lägg till aktie</a>`;
+}
+
+/* ---------------------------------------------------------------- översikt */
+function renderOverview() {
+  const p = portfolio, t = p.totals, home = p.config.home_ccy, d = t.day;
+  p.errors.forEach(e => banner(e, true));
+  $("asof").textContent = p.fetched_at ? `Hämtad ${p.fetched_at.replace("T", " ")} · nästa automatiska hämtning ${p.next_update.replace("T", " ")}` : "";
+  const any = p.holdings.some(h => h.has_lots);
+  if (!p.holdings.length || !any) {
+    $("otop").innerHTML = `<div class="empty">${p.holdings.length
+      ? "Inga transaktioner registrerade än. Öppna en aktie och lägg in ditt första köp."
+      : `Din portfölj är tom. <a href="#/add">Lägg till din första aktie</a>.`}</div>`;
+    $("okpis").innerHTML = "";
+  } else {
+    $("otop").innerHTML = `
+      <div class="sub">Portföljens värde</div>
+      <div class="hero">${fmt(t.value)}<small>${home}</small></div>
+      <div class="delta ${cls(d.change)}">${arrow(d.change)} ${sgn(d.change)} ${home} (${pct(d.pct)}) senaste handelsdag</div>
+      <div class="split">varav kurser ${sgn(d.price_effect)} ${home} · valuta ${sgn(d.fx_effect)} ${home}</div>`;
+    $("okpis").innerHTML = [
+      ["Orealiserad vinst", `<span class="${cls(t.gain)}">${arrow(t.gain)} ${sgn(t.gain)} ${home}</span>`, pct(t.gain_pct) + " mot anskaffning"],
+      ["Realiserad vinst (sålt)", `<span class="${cls(t.realized)}">${arrow(t.realized)} ${sgn(t.realized)} ${home}</span>`, "genomsnittsmetoden"],
+      ["Totalt", `<span class="${cls(t.total)}">${arrow(t.total)} ${sgn(t.total)} ${home}</span>`, "orealiserat + realiserat"],
+      ["Anskaffningsvärde", `${fmt(t.cost)} ${home}`, "kvarvarande aktier"],
+      ["Antal innehav", String(p.holdings.length), ""],
+    ].map(([l, v, s]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
+  }
+  $("otable").innerHTML = p.holdings.length ? `<table><thead><tr><th>Aktie</th><th>Värde (${home})</th><th>Andel</th>
+      <th>Idag (${home})</th><th>Orealiserat (${home})</th></tr></thead><tbody>` +
+    p.holdings.map(h => {
+      const link = `<a href="#/h/${esc(h.id)}">${esc(h.name)}</a><div class="sub">${esc(h.symbol)}${h.price ? ` · ${fmt(h.price, 2)} ${esc(h.price_ccy)} (${pct(h.price_pct)})` : ""}</div>`;
+      if (!h.has_lots || !h.has_prices) return `<tr><td>${link}</td><td colspan="4" class="sub" style="text-align:right">${h.has_prices ? "Inga transaktioner än" : "Inga kurser tillgängliga"}</td></tr>`;
+      return `<tr><td>${link}</td><td>${fmt(h.value)}</td>
+        <td><span class="wbar"><i style="width:${Math.min(100, h.weight).toFixed(1)}%"></i></span>${fmt(h.weight, 1)} %</td>
+        <td class="${cls(h.day_change)}">${arrow(h.day_change)} ${sgn(h.day_change)}<div class="sub">${pct(h.day_pct)}</div></td>
+        <td class="${cls(h.gain)}">${arrow(h.gain)} ${sgn(h.gain)}<div class="sub">${pct(h.gain_pct)}</div></td></tr>`;
+    }).join("") + `</tbody></table>` : "";
+  $("ochartcard").hidden = !any;
+  drawOverviewChart();
+}
+
+function filterRange(h, days) {
+  if (!days || !h.length) return h;
+  const cut = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
+  const f = h.filter(p => p.d >= cut);
+  return f.length >= 2 ? f : h.slice(-2);
+}
+
+function drawOverviewChart() {
+  const h = filterRange(portfolio.history, oRange), home = portfolio.config.home_ccy;
+  drawChart($("ochart"), h, {home, refLabel: "Anskaffning", gainLabel: "Utveckling", empty: "Grafen visas när det finns minst två dagars data.", aria: "Portföljens värde över tid"});
+  $("ohisttable").innerHTML = h.length
+    ? `<table><thead><tr><th>Datum</th><th>Värde (${home})</th><th>Anskaffning (${home})</th></tr></thead><tbody>` +
+      h.slice().reverse().slice(0, 120).map(p => `<tr><td>${p.d}</td><td>${fmt(p.value)}</td><td>${fmt(p.invested)}</td></tr>`).join("") + `</tbody></table>` : "";
+}
+
+/* ---------------------------------------------------------------- ett innehav */
+async function showHolding(id, refresh) {
+  state = await api("api/holdings/" + encodeURIComponent(id) + "/summary" + (refresh ? "?refresh=1" : ""));
   if (range === -1) await loadIntraday(refresh);
-  render();
+  renderHolding();
 }
 
 async function loadIntraday(refresh) {
   let i;
-  try { i = await (await fetch("api/intraday" + (refresh ? "?refresh=1" : ""))).json(); }
-  catch (e) { i = {error: "Kunde inte läsa intradagsdata", points: []}; }
-  if (state) state.intraday = i;
+  try { i = await api("api/holdings/" + encodeURIComponent(state.config.id) + "/intraday" + (refresh ? "?refresh=1" : "")); }
+  catch (e) { i = {error: e.message, points: []}; }
+  state.intraday = i;
 }
 
-function updateChartMeta() {
-  const lg = document.getElementById("legend"), nt = document.getElementById("chartnote");
-  if (range === -1) {
-    const t = state.intraday || {}, pts = t.points || [], home = state.config.home_ccy;
-    lg.innerHTML = `<span><i></i>Värde</span><span><i class="ref"></i>Föregående stängning</span>`;
-    let txt = t.error || "";
-    if (pts.length) {
-      const l = pts[pts.length - 1];
-      txt = `Handelsdag ${t.date}${t.live ? " (pågår)" : ""} · 15 minuters upplösning · senast ${l.t}: ${fmt(l.value)} ${home} ` +
-            `(${sgn(l.value - t.base_value)} ${home} mot föregående stängning) · valutan är fast på senaste ECB-kurs`;
-      if (t.error) txt += " · " + t.error;
-    }
-    nt.textContent = txt;
-  } else {
-    lg.innerHTML = `<span><i></i>Värde</span><span><i class="ref"></i>Anskaffningsvärde (kvarvarande aktier)</span>`;
-    nt.textContent = "Ett värde per handelsdag (stängningskurs). Historiken hämtas från första köpet och uppdateras en gång per dag.";
-  }
-}
-
-function render() {
-  const {config: c, summary: s, error, demo, fetched_at} = state;
+function renderHolding() {
+  const {config: c, summary: s, error, fetched_at} = state;
   const home = c.home_ccy, pc = c.price_ccy;
   document.querySelectorAll(".home").forEach(e => e.textContent = home);
   document.querySelectorAll(".pccy").forEach(e => e.textContent = pc);
-  document.getElementById("title").textContent = `${c.name} (${c.symbol}) – ESPP${demo ? " · DEMO" : ""}`;
+  $("hname").textContent = c.name;
+  $("hsub").textContent = `${c.symbol} · handlas i ${pc}`;
+  if (error) banner(error, true);
 
-  const banners = [];
-  if (error) banners.push(`<div class="banner err">${esc(error)}</div>`);
-  if (demo) banners.push(`<div class="banner">Demoläge: kurserna är påhittade och inget sparas på riktigt.</div>`);
-  document.getElementById("banner").innerHTML = banners.join("");
-
-  const top = document.getElementById("top"), kp = document.getElementById("kpis");
+  const top = $("top"), kp = $("kpis");
   if (!s) {
-    document.getElementById("asof").textContent = "";
+    $("asof").textContent = "";
     top.innerHTML = `<div class="empty">Inga kurser tillgängliga just nu.</div>`;
     kp.innerHTML = "";
   } else if (!state.has_lots) {
-    document.getElementById("asof").textContent = `Senaste stängning ${s.as_of}`;
-    top.innerHTML = `<div class="empty">Du har inga transaktioner registrerade än. Lägg till ditt första ESPP-köp längst ner på sidan.<br>
-      Aktuell kurs: <b>${fmt(s.price, 1)} ${pc}</b> (${pct(s.day.price_pct)} senaste dagen)</div>`;
+    $("asof").textContent = `Senaste stängning ${s.as_of}`;
+    top.innerHTML = `<div class="empty">Inga transaktioner registrerade än. Lägg till ditt första köp längst ner på sidan.<br>
+      Aktuell kurs: <b>${fmt(s.price, 2)} ${pc}</b> (${pct(s.day.price_pct)} senaste dagen)</div>`;
     kp.innerHTML = "";
   } else {
     const d = s.day;
-    document.getElementById("asof").textContent =
-      `Stängningskurs ${s.as_of} (jämfört med ${s.prev}) · hämtad ${fetched_at.replace("T", " ")} · nästa automatiska hämtning ${state.next_update.replace("T", " ")}`;
+    $("asof").textContent = `Stängningskurs ${s.as_of} (jämfört med ${s.prev}) · hämtad ${fetched_at.replace("T", " ")} · nästa automatiska hämtning ${state.next_update.replace("T", " ")}`;
+    const fxNote = pc !== home;
     top.innerHTML = `
       <div class="sub">Värde av ditt innehav</div>
       <div class="hero">${fmt(s.value)}<small>${home}</small></div>
       <div class="delta ${cls(d.change)}">${arrow(d.change)} ${sgn(d.change)} ${home} (${pct(d.pct)}) senaste handelsdag</div>
-      <div class="split">varav kurs ${sgn(d.price_effect)} ${home} · valuta ${sgn(d.fx_effect)} ${home}</div>`;
+      ${fxNote ? `<div class="split">varav kurs ${sgn(d.price_effect)} ${home} · valuta ${sgn(d.fx_effect)} ${home}</div>` : ""}`;
     kp.innerHTML = [
       ["Orealiserad vinst", `<span class="${cls(s.gain)}">${arrow(s.gain)} ${sgn(s.gain)} ${home}</span>`, pct(s.gain_pct) + " mot anskaffning"],
       ["Realiserad vinst (sålt)", `<span class="${cls(s.realized)}">${arrow(s.realized)} ${sgn(s.realized)} ${home}</span>`, s.lots.some(l => l.type === "sell") ? "genomsnittsmetoden" : "inga sälj än"],
       ["Totalt", `<span class="${cls(s.total)}">${arrow(s.total)} ${sgn(s.total)} ${home}</span>`, "orealiserat + realiserat"],
       ["Antal aktier", fmt(s.shares, s.shares % 1 ? 3 : 0), `${s.buys} köp`],
-      ["Aktiekurs", `${fmt(s.price, 1)} ${pc}`, `<span class="${cls(d.price_pct)}">${pct(d.price_pct)}</span> idag`],
-      [`${pc}/${home}`, fmt(s.fx, 4), `<span class="${cls(s.fx - s.prev_fx)}">${pct((s.fx / s.prev_fx - 1) * 100)}</span> idag`],
+      ["Aktiekurs", `${fmt(s.price, 2)} ${pc}`, `<span class="${cls(d.price_pct)}">${pct(d.price_pct)}</span> idag`],
+      ...(fxNote ? [[`${pc}/${home}`, fmt(s.fx, 4), `<span class="${cls(s.fx - s.prev_fx)}">${pct((s.fx / s.prev_fx - 1) * 100)}</span> idag`]] : []),
       ["Anskaffningsvärde", `${fmt(s.cost)} ${home}`, s.avg_cost ? `${fmt(s.avg_cost, 1)} ${home} per aktie` : "inga aktier kvar"],
     ].map(([l, v, sub]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${sub}</div></div>`).join("");
   }
-  renderLots(); drawChart(); renderHistTable();
+  renderLots(); drawHoldingChart(); renderHistTable();
 }
 
 function renderLots() {
-  const el = document.getElementById("lots"), s = state.summary, home = state.config.home_ccy;
+  const el = $("lots"), s = state.summary, home = state.config.home_ccy;
   if (!s || !s.lots.length) { el.innerHTML = `<div class="empty">Inga transaktioner än.</div>`; return; }
   el.innerHTML = `<table><thead><tr><th>Datum</th><th>Typ</th><th>Antal</th><th>Belopp (${home})</th>
     <th>Resultat (${home})</th><th>%</th><th></th></tr></thead><tbody>` +
@@ -243,26 +374,54 @@ function renderLots() {
     </tr>`).join("") + `</tbody></table>`;
 }
 
-function visibleHistory() {
+function holdingSeries() {
   if (range === -1) {
     const t = state.intraday;
     return t && t.points ? t.points.map(p => ({d: p.t, value: p.value, invested: t.base_value, price: p.price})) : [];
   }
-  const h = state.summary ? state.summary.history : [];
-  if (!range || !h.length) return h;
-  const cut = new Date(Date.now() - range * 864e5).toISOString().slice(0, 10);
-  const f = h.filter(p => p.d >= cut);
-  return f.length >= 2 ? f : h.slice(-2);
+  return filterRange(state.summary ? state.summary.history : [], range);
 }
 
 function renderHistTable() {
-  const h = visibleHistory().slice().reverse(), home = state.config.home_ccy, id = range === -1;
-  document.getElementById("histtable").innerHTML = h.length
+  const h = holdingSeries().slice().reverse(), home = state.config.home_ccy, id = range === -1;
+  $("histtable").innerHTML = h.length
     ? `<table><thead><tr><th>${id ? "Tid" : "Datum"}</th><th>Kurs</th><th>Värde (${home})</th><th>${id ? "Föreg. stängning" : "Anskaffning"} (${home})</th></tr></thead><tbody>` +
-      h.slice(0, 120).map(p => `<tr><td>${p.d}</td><td>${fmt(p.price, 1)}</td><td>${fmt(p.value)}</td><td>${fmt(p.invested)}</td></tr>`).join("") +
+      h.slice(0, 120).map(p => `<tr><td>${p.d}</td><td>${fmt(p.price, 2)}</td><td>${fmt(p.value)}</td><td>${fmt(p.invested)}</td></tr>`).join("") +
       `</tbody></table>` : "";
 }
 
+function updateChartMeta() {
+  const lg = $("legend"), nt = $("chartnote");
+  if (range === -1) {
+    const t = state.intraday || {}, pts = t.points || [], home = state.config.home_ccy;
+    lg.innerHTML = `<span><i></i>Värde</span><span><i class="ref"></i>Föregående stängning</span>`;
+    let txt = t.error || "";
+    if (pts.length) {
+      const l = pts[pts.length - 1];
+      txt = `Handelsdag ${t.date}${t.live ? " (pågår)" : ""} · 15 minuters upplösning · senast ${l.t}: ${fmt(l.value)} ${home} ` +
+            `(${sgn(l.value - t.base_value)} ${home} mot föregående stängning)` +
+            (state.config.price_ccy !== home ? " · valutan är fast på senaste ECB-kurs" : "");
+      if (t.error) txt += " · " + t.error;
+    }
+    nt.textContent = txt;
+  } else {
+    lg.innerHTML = `<span><i></i>Värde</span><span><i class="ref"></i>Anskaffningsvärde (kvarvarande aktier)</span>`;
+    nt.textContent = "Ett värde per handelsdag (stängningskurs). Historiken hämtas från första köpet och uppdateras en gång per dag.";
+  }
+}
+
+function drawHoldingChart() {
+  updateChartMeta();
+  const intra = range === -1, home = state.config.home_ccy;
+  drawChart($("chart"), holdingSeries(), {
+    home, pccy: state.config.price_ccy, showPrice: true,
+    refLabel: intra ? "Föreg. stängning" : "Anskaffning", gainLabel: intra ? "Mot föreg. stängning" : "Utveckling",
+    empty: intra ? ((state.intraday && state.intraday.error) || "Ingen intradagsdata ännu.") : "Grafen visas när det finns minst två dagars data.",
+    aria: `Värdet av ${state.config.name} över tid i ${home}`,
+  });
+}
+
+/* ---------------------------------------------------------------- diagram (delas av översikt och innehav) */
 function niceTicks(lo, hi, n) {
   const span = hi - lo || 1, raw = span / n, mag = Math.pow(10, Math.floor(Math.log10(raw)));
   const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw) || raw;
@@ -270,13 +429,8 @@ function niceTicks(lo, hi, n) {
   return out;
 }
 
-function drawChart() {
-  updateChartMeta();
-  const box = document.getElementById("chart"), h = visibleHistory(), intra = range === -1;
-  if (h.length < 2) {
-    box.innerHTML = `<div class="empty">${intra ? esc((state.intraday && state.intraday.error) || "Ingen intradagsdata ännu.") : "Grafen visas när det finns minst två dagars data."}</div>`;
-    return;
-  }
+function drawChart(box, h, o) {
+  if (h.length < 2) { box.innerHTML = `<div class="empty">${esc(o.empty)}</div>`; return; }
   const W = 900, H = 320, m = {l: 62, r: 14, t: 12, b: 28};
   const iw = W - m.l - m.r, ih = H - m.t - m.b;
   const vals = h.flatMap(p => [p.value, p.invested]);
@@ -286,8 +440,8 @@ function drawChart() {
   const path = key => h.map((p, i) => (i ? "L" : "M") + x(i).toFixed(1) + "," + y(p[key]).toFixed(1)).join("");
   const ticks = niceTicks(lo, hi, 5);
   const nx = Math.min(6, h.length), xi = Array.from({length: nx}, (_, k) => Math.round(k * (h.length - 1) / (nx - 1 || 1)));
-  const last = h[h.length - 1], lastLast = h[h.length - 1];
-  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Värdet av ditt innehav över tid i ${state.config.home_ccy}">
+  const last = h[h.length - 1];
+  box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.aria)}">
     <g class="axis">
       ${ticks.map(t => `<line x1="${m.l}" x2="${W - m.r}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/>
         <text x="${m.l - 8}" y="${y(t) + 4}" text-anchor="end">${fmt(t)}</text>`).join("")}
@@ -296,67 +450,114 @@ function drawChart() {
     <path d="${path("invested")}" fill="none" stroke="var(--ref)" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round"/>
     <path d="${path("value")}" fill="none" stroke="var(--series1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
     <circle cx="${x(h.length - 1)}" cy="${y(last.value)}" r="4" fill="var(--series1)" stroke="var(--surface)" stroke-width="2"/>
-    <g id="cross" style="display:none"><line id="cl" y1="${m.t}" y2="${m.t + ih}" stroke="var(--ink3)" stroke-width="1"/>
-      <circle id="c1" r="4.5" fill="var(--series1)" stroke="var(--surface)" stroke-width="2"/>
-      <circle id="c2" r="4.5" fill="var(--ref)" stroke="var(--surface)" stroke-width="2"/></g>
-    <rect id="hit" x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="transparent"/>
-  </svg><div class="tip" id="tip"></div>`;
+    <g class="cross" style="display:none"><line class="cl" y1="${m.t}" y2="${m.t + ih}" stroke="var(--ink3)" stroke-width="1"/>
+      <circle class="c1" r="4.5" fill="var(--series1)" stroke="var(--surface)" stroke-width="2"/>
+      <circle class="c2" r="4.5" fill="var(--ref)" stroke="var(--surface)" stroke-width="2"/></g>
+    <rect class="hit" x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="transparent"/>
+  </svg><div class="tip"></div>`;
 
-  const svg = box.querySelector("svg"), tip = box.querySelector("#tip"), hit = box.querySelector("#hit"), cross = box.querySelector("#cross");
+  const q = s => box.querySelector(s), svg = q("svg"), tip = q(".tip"), hit = q(".hit"), cross = q(".cross");
   const show = ev => {
     const r = svg.getBoundingClientRect(), sx = W / r.width;
     const cx = ((ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left) * sx;
     const i = Math.max(0, Math.min(h.length - 1, Math.round(((cx - m.l) / iw) * (h.length - 1))));
     const p = h[i];
     cross.style.display = "";
-    cross.querySelector("#cl").setAttribute("x1", x(i)); cross.querySelector("#cl").setAttribute("x2", x(i));
-    cross.querySelector("#c1").setAttribute("cx", x(i)); cross.querySelector("#c1").setAttribute("cy", y(p.value));
-    cross.querySelector("#c2").setAttribute("cx", x(i)); cross.querySelector("#c2").setAttribute("cy", y(p.invested));
-    const g = p.value - p.invested;
-    tip.innerHTML = `<b>${p.d}</b><br>Värde: ${fmt(p.value)} ${state.config.home_ccy}<br>${intra ? "Föreg. stängning" : "Anskaffning"}: ${fmt(p.invested)}<br>Kurs: ${fmt(p.price, 1)} ${state.config.price_ccy}<br>${intra ? "Mot föreg. stängning" : "Utveckling"}: ${sgn(g)}`;
+    q(".cl").setAttribute("x1", x(i)); q(".cl").setAttribute("x2", x(i));
+    q(".c1").setAttribute("cx", x(i)); q(".c1").setAttribute("cy", y(p.value));
+    q(".c2").setAttribute("cx", x(i)); q(".c2").setAttribute("cy", y(p.invested));
+    tip.innerHTML = `<b>${esc(p.d)}</b><br>Värde: ${fmt(p.value)} ${esc(o.home)}<br>${esc(o.refLabel)}: ${fmt(p.invested)}` +
+      (o.showPrice && p.price != null ? `<br>Kurs: ${fmt(p.price, 2)} ${esc(o.pccy)}` : "") +
+      `<br>${esc(o.gainLabel)}: ${sgn(p.value - p.invested)}`;
     tip.style.display = "block";
     const left = x(i) / sx, tw = tip.offsetWidth;
     tip.style.left = Math.min(Math.max(0, left + 12), r.width - tw) + "px";
     tip.style.top = "8px";
   };
   hit.addEventListener("mousemove", show); hit.addEventListener("touchmove", show, {passive: true}); hit.addEventListener("touchstart", show, {passive: true});
-  const hideTip = () => { tip.style.display = "none"; cross.style.display = "none"; };
-  hit.addEventListener("mouseleave", hideTip);
+  hit.addEventListener("mouseleave", () => { tip.style.display = "none"; cross.style.display = "none"; });
 }
 
-document.getElementById("refresh").addEventListener("click", async e => {
-  e.target.disabled = true; try { await load(true); } finally { e.target.disabled = false; }
-});
-document.getElementById("ranges").addEventListener("click", async e => {
+/* ---------------------------------------------------------------- händelser */
+$("refresh").addEventListener("click", async e => { e.target.disabled = true; try { await show(true); } finally { e.target.disabled = false; } });
+window.addEventListener("hashchange", () => show());
+
+$("ranges").addEventListener("click", async e => {
   const b = e.target.closest("button"); if (!b) return;
   range = +b.dataset.r;
   document.querySelectorAll("#ranges button").forEach(x => x.setAttribute("aria-pressed", x === b));
   if (range === -1 && !(state.intraday && state.intraday.points)) await loadIntraday();
-  drawChart(); renderHistTable();
+  drawHoldingChart(); renderHistTable();
 });
-setInterval(() => { if (range === -1 && state && state.intraday && state.intraday.live) load(); }, 15 * 60 * 1000);
-document.getElementById("lots").addEventListener("click", async e => {
-  const b = e.target.closest(".del"); if (!b) return;
-  if (!confirm("Ta bort transaktionen?")) return;
-  const r = await fetch("api/lots/" + encodeURIComponent(b.dataset.id), {method: "DELETE"});
-  if (!r.ok) alert((await r.json()).error || "Något gick fel");
-  load();
-});
-document.getElementById("addform").addEventListener("submit", async e => {
-  e.preventDefault();
-  const err = document.getElementById("formerr"); err.style.display = "none";
-  const body = Object.fromEntries(new FormData(e.target).entries());
-  body[body.type === "sell" ? "received" : "paid"] = body.amount; delete body.amount;
-  const r = await fetch("api/lots", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
-  if (!r.ok) { err.textContent = (await r.json()).error || "Något gick fel"; err.style.display = ""; return; }
-  e.target.reset(); load();
+$("oranges").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  oRange = +b.dataset.r;
+  document.querySelectorAll("#oranges button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  drawOverviewChart();
 });
 
-document.getElementById("typesel").addEventListener("change", e => {
-  document.getElementById("amountlabel").textContent = e.target.value === "sell" ? "Erhållet belopp" : "Inbetalt belopp";
+$("lots").addEventListener("click", async e => {
+  const b = e.target.closest(".del"); if (!b) return;
+  if (!confirm("Ta bort transaktionen?")) return;
+  try { await api("api/lots/" + encodeURIComponent(b.dataset.id), {method: "DELETE"}); portfolio = null; await show(); }
+  catch (err) { alert(err.message); }
 });
-document.querySelector("input[name=date]").max = new Date().toISOString().slice(0, 10);
-load();
+
+$("typesel").addEventListener("change", e => {
+  $("amountlabel").textContent = e.target.value === "sell" ? "Erhållet belopp" : "Inbetalt belopp";
+});
+$("addform").addEventListener("submit", async e => {
+  e.preventDefault();
+  const err = $("formerr"); err.hidden = true;
+  const body = Object.fromEntries(new FormData(e.target).entries());
+  body[body.type === "sell" ? "received" : "paid"] = body.amount; delete body.amount;
+  body.holding = state.config.id;
+  try { await postJson("api/lots", body); e.target.reset(); portfolio = null; await show(); }
+  catch (x) { err.textContent = x.message; err.hidden = false; }
+});
+
+$("delholding").addEventListener("click", async () => {
+  const n = state.summary ? state.summary.lots.length : 0;
+  if (!confirm(`Ta bort ${state.config.name} från portföljen${n ? ` och dess ${n} transaktioner` : ""}? Det går inte att ångra.`)) return;
+  try { await api("api/holdings/" + encodeURIComponent(state.config.id), {method: "DELETE"}); portfolio = null; location.hash = "#/"; await show(); }
+  catch (x) { alert(x.message); }
+});
+
+/* sök och lägg till aktie */
+async function addHolding(symbol, name) {
+  const err = $("adderr"); err.hidden = true;
+  try {
+    const h = await postJson("api/holdings", {symbol, name});
+    portfolio = null; location.hash = "#/h/" + h.id;
+  } catch (x) { err.textContent = x.message; err.hidden = false; }
+}
+$("searchform").addEventListener("submit", async e => {
+  e.preventDefault();
+  const res = $("results"), err = $("adderr"); err.hidden = true;
+  res.textContent = "Söker…";
+  try {
+    const r = await api("api/search?q=" + encodeURIComponent($("q").value));
+    res.innerHTML = r.results.length
+      ? `<table><thead><tr><th>Symbol</th><th>Namn</th><th>Börs</th><th></th></tr></thead><tbody>` +
+        r.results.map((x, i) => `<tr><td><code>${esc(x.symbol)}</code></td><td>${esc(x.name)}</td><td>${esc(x.exchange)}</td>
+          <td><button class="btn" data-i="${i}">Lägg till</button></td></tr>`).join("") + `</tbody></table>`
+      : `<div class="empty">Inga träffar. Prova en annan stavning eller skriv symbolen direkt.</div>`;
+    res._items = r.results;
+  } catch (x) { res.textContent = ""; err.textContent = x.message; err.hidden = false; }
+});
+$("results").addEventListener("click", e => {
+  const b = e.target.closest("button[data-i]"); if (!b) return;
+  const it = $("results")._items[+b.dataset.i]; addHolding(it.symbol, it.name);
+});
+$("addsym").addEventListener("click", () => {
+  const v = $("q").value.trim();
+  if (!v) { $("q").focus(); return; }
+  addHolding(v.toUpperCase(), "");
+});
+
+$("view-holding").querySelector("input[name=date]").max = new Date().toISOString().slice(0, 10);
+setInterval(() => { if (route().v === "holding" && range === -1 && state && state.intraday && state.intraday.live) show(); }, 15 * 60 * 1000);
+show();
 </script>
 </body>
 </html>

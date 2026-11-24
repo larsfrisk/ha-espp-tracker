@@ -1,20 +1,30 @@
-# ESPP-tracker
+# Portföljtracker
 
-Följ ditt Hitachi-innehav (ESPP) i SEK. Öppna **ESPP** i sidopanelen och lägg in dina köp och försäljningar
-(datum, antal, belopp) från JP Morgans transaktionshistorik.
+Följ dina aktier i SEK: en **översikt** för hela portföljen och en **sida per aktie** med värde,
+dagens utveckling, orealiserad och realiserad vinst. Öppna **Portfölj** i sidopanelen.
 
-Kurser hämtas från Yahoo Finance (6501.T, JPY) och ECB-kurser (JPY/SEK) en gång per dag (kl 16:30, efter Tokyo-stängning och ECB:s dagskurser).
-Köpen sparas i appens egen datamapp och följer med i Home Assistants säkerhetskopior.
+## Lägga till aktier
+
+Välj **+ Lägg till aktie**, sök på bolagsnamn eller skriv symbolen direkt. Stockholmsbörsen har
+suffixet `.ST`, till exempel `VOLV-B.ST`, `INVE-B.ST` eller `ERIC-B.ST`. Hitachi är `6501.T`.
+Andra börser fungerar om Yahoo Finance har dem och valutan kan räknas om till kronor (ECB-kurser).
+Sedan lägger du in dina köp och försäljningar (datum, antal, belopp) för hand på aktiens sida.
+Vinst vid försäljning räknas med genomsnittsmetoden.
+
+## Kurser
+
+Historiken (stängningskurser från ditt första köp) hämtas en gång per dag kl 16:30, efter att Tokyo-börsen
+stängt och ECB publicerat dagens valutakurser. Vyn **Idag** på en aktie visar senaste handelsdag med
+15 minuters upplösning. Knappen "Hämta kurser nu" tvingar fram en hämtning.
+Tiden kan ändras med `update_time` i `/data/config.json`.
 
 ## Sensorer i Home Assistant
 
-`sensor.espp_value`, `sensor.espp_day_change`, `sensor.espp_day_change_pct`,
-`sensor.espp_unrealized_gain`, `sensor.espp_unrealized_gain_pct`, `sensor.espp_realized_gain`, `sensor.espp_total_gain`, `sensor.espp_cost`,
-`sensor.espp_shares`, `sensor.espp_price` och `sensor.espp_fx`.
+Sensorerna skickas var 15:e minut från sparade kurser (inget nytt hämtas då).
 
-Sensorerna skapas när appen startar och uppdateras en gång per dag (kl 16:30, efter Tokyo-stängning och ECB:s dagskurser). De saknas tills
-du lagt in minst ett köp (utom kurs och växelkurs).
-
-Diagrammet har en punkt per handelsdag (avslutad stängningskurs). Tiden kan ändras med `update_time` i `/data/config.json`. Knappen "Hämta kurser nu" tvingar en hämtning.
-
-Vyn **Idag** visar senaste handelsdag med 15 minuters upplösning (kurs från Yahoo Finance, valuta fast på senaste ECB-kurs). Historiken hämtas hela vägen från ditt första köp.
+- Hela portföljen: `sensor.portfolio_value`, `portfolio_day_change`, `portfolio_day_change_pct`,
+  `portfolio_unrealized_gain`, `portfolio_realized_gain`, `portfolio_total_gain`, `portfolio_cost`.
+- Varje aktie: `sensor.<prefix>_value`, `_day_change`, `_day_change_pct`, `_unrealized_gain`,
+  `_unrealized_gain_pct`, `_realized_gain`, `_total_gain`, `_cost`, `_shares`, `_price` och `_fx`.
+  Prefixet är `espp` för Hitachi (som förut) och `holding_<namn>` för aktier du lägger till,
+  till exempel `sensor.holding_volvo_ab_ser_b_value`.

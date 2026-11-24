@@ -803,6 +803,19 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError as e:
                     return self._send(400, {"error": str(e)})
             return self._send(201, {"ok": True})
+        m = re.match(r"^/api/holdings/([a-z0-9_-]+)/name$", self.path)
+        if m:
+            name = str(body.get("name") or "").strip()[:60]
+            if not name:
+                return self._send(400, {"error": "Namnet får inte vara tomt"})
+            with LOCK:
+                hs = load_holdings()
+                h = next((x for x in hs if x["id"] == m.group(1)), None)
+                if not h:
+                    return self._send(404, {"error": "Innehavet finns inte"})
+                h["name"] = name
+                save_holdings(hs)
+            return self._send(200, h)
         self._send(404, {"error": "Hittades inte"})
 
     def do_DELETE(self):

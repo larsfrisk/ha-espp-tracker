@@ -126,7 +126,7 @@
 
   <!-- ===================== ETT INNEHAV ===================== -->
   <div class="view" id="view-holding" hidden>
-    <h2 class="name" id="hname"></h2>
+    <h2 class="name"><span id="hname"></span> <button class="btn" id="renamebtn" title="Byt namn" aria-label="Byt namn">✎ Byt namn</button></h2>
     <div class="sub" id="hsub"></div>
     <section class="card" id="top"><div class="empty">Laddar…</div></section>
     <section class="kpis" id="kpis"></section>
@@ -192,6 +192,7 @@
     <section class="card">
       <div class="bar"><h2>Lägg till aktie eller fond</h2></div>
       <form id="searchform">
+        <label>Namn (valfritt)<input id="qname" maxlength="60" placeholder="t.ex. Avanza Zero"></label>
         <label>Sök namn, symbol eller ISIN<input id="q" placeholder="t.ex. Volvo, VOLV-B.ST eller SE0001718388" autocomplete="off" required></label>
         <button class="btn primary" type="submit">Sök</button>
         <button class="btn" type="button" id="addsym">Lägg till symbolen direkt</button>
@@ -560,6 +561,13 @@ $("navlist").addEventListener("click", async e => {
   catch (err) { alert(err.message); }
 });
 
+$("renamebtn").addEventListener("click", async () => {
+  const n = prompt("Nytt namn:", state.config.name);
+  if (n === null || !n.trim()) return;
+  try { await postJson("api/holdings/" + encodeURIComponent(state.config.id) + "/name", {name: n.trim()}); portfolio = null; await show(); }
+  catch (x) { alert(x.message); }
+});
+
 $("typesel").addEventListener("change", e => {
   $("amountlabel").textContent = e.target.value === "sell" ? "Erhållet belopp" : "Inbetalt belopp";
 });
@@ -617,7 +625,7 @@ $("manualform").addEventListener("submit", async e => {
 $("addsym").addEventListener("click", () => {
   const v = $("q").value.trim();
   if (!v) { $("q").focus(); return; }
-  addHolding(v.toUpperCase(), "");
+  addHolding(v.toUpperCase(), $("qname").value.trim());
 });
 
 $("view-holding").querySelector("input[name=date]").max = new Date().toISOString().slice(0, 10);

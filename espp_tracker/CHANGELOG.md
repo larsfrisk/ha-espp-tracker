@@ -4,6 +4,12 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [2.1.1] - 2026-11-24
+
+### Tillagt
+- Byt namn på ett innehav: knappen **Byt namn** på aktiens/fondens sida, så att till exempel en fond visas som "Avanza Zero" i stället för symbolen `0P0001BM0Y.ST`.
+- Valfritt namnfält när du lägger till en symbol direkt.
+
 ## [2.1.0] - 2026-11-24
 
 ### Tillagt

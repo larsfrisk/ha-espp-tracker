@@ -4,6 +4,11 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [2.1.2] - 2026-11-24
+
+### Rättat
+- Klockslagen i dagsdiagrammet (Idag) visas nu i webbläsarens tidszon i stället för serverns. Tidigare kunde de vara en timme fel (UTC i stället för svensk tid) om tidszonen i Home Assistants system inte var satt till Europe/Stockholm.
+
 ## [2.1.1] - 2026-11-24
 
 ### Tillagt

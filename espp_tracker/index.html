@@ -393,6 +393,9 @@ function renderHolding() {
   renderLots(); drawHoldingChart(); renderHistTable(); renderNavs();
 }
 
+/* klockslag i webbläsarens tidszon (inte serverns), så att det alltid stämmer med din klocka */
+const hhmm = p => p.ts ? new Date(p.ts * 1000).toLocaleTimeString("sv-SE", {hour: "2-digit", minute: "2-digit"}) : p.t;
+
 function renderNavs() {
   const el = $("navlist"), navs = state.navs;
   if (!navs) { el.innerHTML = ""; return; }
@@ -421,7 +424,7 @@ function renderLots() {
 function holdingSeries() {
   if (range === -1) {
     const t = state.intraday;
-    return t && t.points ? t.points.map(p => ({d: p.t, value: p.value, invested: t.base_value, price: p.price})) : [];
+    return t && t.points ? t.points.map(p => ({d: hhmm(p), value: p.value, invested: t.base_value, price: p.price})) : [];
   }
   return filterRange(state.summary ? state.summary.history : [], range);
 }
@@ -442,7 +445,7 @@ function updateChartMeta() {
     let txt = t.error || "";
     if (pts.length) {
       const l = pts[pts.length - 1];
-      txt = `Handelsdag ${t.date}${t.live ? " (pågår)" : ""} · 15 minuters upplösning · senast ${l.t}: ${fmt(l.value)} ${home} ` +
+      txt = `Handelsdag ${t.date}${t.live ? " (pågår)" : ""} · 15 minuters upplösning · senast ${hhmm(l)}: ${fmt(l.value)} ${home} ` +
             `(${sgn(l.value - t.base_value)} ${home} mot föregående stängning)` +
             (state.config.price_ccy !== home ? " · valutan är fast på senaste ECB-kurs" : "");
       if (t.error) txt += " · " + t.error;

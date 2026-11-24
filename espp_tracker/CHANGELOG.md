@@ -4,6 +4,11 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [2.2.0] - 2026-11-24
+
+### Tillagt
+- Högre upplösning i dagsdiagrammet: sätt `intraday_interval` i `/data/config.json` till `"1m"`, `"5m"` eller `"15m"` (standard). Vid `1m` hämtas en ny stapel varje minut under pågående handel och sidan uppdateras automatiskt lika ofta.
+
 ## [2.1.2] - 2026-11-24
 
 ### Rättat

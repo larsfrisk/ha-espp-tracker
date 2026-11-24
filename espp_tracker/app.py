@@ -40,6 +40,7 @@ DEFAULT_CONFIG = {
     "symbol": "6501.T",
     "price_ccy": "JPY",
     "home_ccy": "SEK",       # valutan du vill se värdet i
+    "intraday_interval": "15m",   # upplösning i dagsdiagrammet: 1m, 5m eller 15m
     "update_time": "16:30",   # daglig kurshämtning (lokal tid), efter Tokyo-stängning och ECB-kurser
     "publish_minutes": 15,    # hur ofta sensorer skickas till HA (använder sparade kurser, hämtar inget nytt)
 }
@@ -588,9 +589,18 @@ def build_portfolio(refresh=False):
 
 # ---------------------------------------------------------------- intradag (15 minuter)
 
-def fetch_intraday(symbol):
-    """Senaste handelsdagens 15-minutersstaplar från Yahoo Finance."""
-    url = "https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=15m&range=5d" % urllib.parse.quote(symbol)
+INTERVALS = {"1m": 60, "5m": 300, "15m": 900}
+
+
+def intraday_interval(cfg):
+    v = str(cfg.get("intraday_interval", "15m"))
+    return v if v in INTERVALS else "15m"
+
+
+def fetch_intraday(symbol, interval="15m"):
+    """Senaste handelsdagens staplar (1, 5 eller 15 minuter) från Yahoo Finance."""
+    rng = "1d" if interval == "1m" else "5d"
+    url = "https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=%s&range=%s" % (urllib.parse.quote(symbol), interval, rng)
     res = _http_json(url)["chart"]["result"][0]
     off = res["meta"].get("gmtoffset", 0)
     reg = res["meta"].get("currentTradingPeriod", {}).get("regular", {})
@@ -604,7 +614,7 @@ def fetch_intraday(symbol):
         raise ValueError("inga intradagsdata")
     last = max(days)
     live = bool(reg.get("start") and reg.get("end") and reg["start"] <= time.time() < reg["end"])
-    return {"date": last, "live": live, "points": sorted(days[last])}
+    return {"date": last, "live": live, "points": sorted(days[last]), "interval": interval}
 
 
 def demo_intraday(base_price, symbol=""):
@@ -618,16 +628,17 @@ def demo_intraday(base_price, symbol=""):
 
 
 def get_intraday(cfg, last_close, refresh, cache_file):
-    """(data, fel). 15 min cache under pågående handel, 60 min annars."""
+    """(data, fel). Cache lika lång som stapeln under pågående handel, 60 min annars."""
     if DEMO:
         return demo_intraday(last_close, cfg["symbol"]), None
     cache = _read_json(cache_file, {})
     now = time.time()
-    same = cache.get("symbol") == cfg["symbol"] and bool(cache.get("points"))
-    if same and not refresh and now - cache.get("fetched_at", 0) < (900 if cache.get("live") else 3600):
+    iv = intraday_interval(cfg)
+    same = cache.get("symbol") == cfg["symbol"] and cache.get("interval", "15m") == iv and bool(cache.get("points"))
+    if same and not refresh and now - cache.get("fetched_at", 0) < (INTERVALS[iv] if cache.get("live") else 3600):
         return cache, None
     try:
-        data = fetch_intraday(cfg["symbol"])
+        data = fetch_intraday(cfg["symbol"], iv)
         data.update({"symbol": cfg["symbol"], "fetched_at": now})
         _write_json(cache_file, data)
         return data, None
@@ -658,7 +669,7 @@ def build_intraday(h, refresh=False):
     pts = [{"ts": ts, "t": dt.datetime.fromtimestamp(ts).strftime("%H:%M"), "price": p,
             "value": shares * p * rate} for ts, p in data["points"]]
     return dict(base, date=data["date"], live=data["live"], points=pts, shares=shares, fx=rate,
-                base_price=base_price, base_value=shares * base_price * rate,
+                interval=data.get("interval", "15m"), base_price=base_price, base_value=shares * base_price * rate,
                 error=ierr, fetched_at=dt.datetime.fromtimestamp(data["fetched_at"]).isoformat(timespec="seconds"))
 
 

@@ -445,7 +445,7 @@ function updateChartMeta() {
     let txt = t.error || "";
     if (pts.length) {
       const l = pts[pts.length - 1];
-      txt = `Handelsdag ${t.date}${t.live ? " (pågår)" : ""} · 15 minuters upplösning · senast ${hhmm(l)}: ${fmt(l.value)} ${home} ` +
+      txt = `Handelsdag ${t.date}${t.live ? " (pågår)" : ""} · ${({"1m": "1 minuts", "5m": "5 minuters"})[t.interval] || "15 minuters"} upplösning · senast ${hhmm(l)}: ${fmt(l.value)} ${home} ` +
             `(${sgn(l.value - t.base_value)} ${home} mot föregående stängning)` +
             (state.config.price_ccy !== home ? " · valutan är fast på senaste ECB-kurs" : "");
       if (t.error) txt += " · " + t.error;
@@ -632,7 +632,13 @@ $("addsym").addEventListener("click", () => {
 });
 
 $("view-holding").querySelector("input[name=date]").max = new Date().toISOString().slice(0, 10);
-setInterval(() => { if (route().v === "holding" && range === -1 && state && state.intraday && state.intraday.live) show(); }, 15 * 60 * 1000);
+let lastAuto = Date.now();
+setInterval(() => {
+  const i = state && state.intraday;
+  if (!(route().v === "holding" && range === -1 && i && i.live)) { lastAuto = Date.now(); return; }
+  const every = ({"1m": 60, "5m": 300})[i.interval] || 900;
+  if (Date.now() - lastAuto >= every * 1000 - 2000) { lastAuto = Date.now(); show(); }
+}, 15000);
 show();
 </script>
 </body>

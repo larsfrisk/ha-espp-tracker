@@ -541,6 +541,7 @@ def build_summary(h, refresh=False):
         "fetched_at": dt.datetime.fromtimestamp(fetched_at).isoformat(timespec="seconds"),
         "summary": summ, "has_lots": bool(lots),
         "next_update": next_due(time.time(), cfg).isoformat(timespec="minutes"),
+        "price_history": [{"d": d, "price": prices[d]} for d in sorted(prices)[-800:]],
         "navs": [{"date": d, "price": p} for d, p in sorted(prices.items(), reverse=True)] if cfg["source"] == "manual" else None,
     }
 

@@ -512,10 +512,19 @@ function renderLots() {
     </tr>`).join("") + `</tbody></table>`;
 }
 
+/* bevakning: aktie utan transaktioner. Då ritas kursen (i aktiens valuta) i stället för ett värde på 0 */
+const watching = () => !state.has_lots;
+
 function holdingSeries() {
   if (range === -1) {
     const t = state.intraday;
-    return t && t.points ? t.points.map(p => ({d: hhmm(p), value: p.value, invested: t.base_value, price: p.price})) : [];
+    if (!(t && t.points)) return [];
+    return watching() ? t.points.map(p => ({d: hhmm(p), value: p.price, invested: t.base_price, price: p.price}))
+                      : t.points.map(p => ({d: hhmm(p), value: p.value, invested: t.base_value, price: p.price}));
+  }
+  if (watching()) {
+    const s = filterRange(state.price_history || [], range);
+    return s.map(p => ({d: p.d, value: p.price, invested: s[0].price, price: p.price}));
   }
   return filterRange(state.summary ? state.summary.history : [], range);
 }
@@ -532,10 +541,16 @@ function updateChartMeta() {
   const lg = $("legend"), nt = $("chartnote");
   if (range === -1) {
     const t = state.intraday || {}, pts = t.points || [], home = state.config.home_ccy;
-    lg.innerHTML = `<span><i></i>Värde</span><span><i class="ref"></i>Föregående stängning</span>`;
+    const w = watching(), u = w ? state.config.price_ccy : home;
+    lg.innerHTML = `<span><i></i>${w ? "Kurs" : "Värde"}</span><span><i class="ref"></i>Föregående stängning</span>`;
     let txt = t.error || "";
     if (pts.length) {
       const l = pts[pts.length - 1];
+      if (w) {
+        txt = `Handelsdag ${t.date}${t.live ? " (pågår)" : ""} · senast ${hhmm(l)}: ${fmt(l.price, 2)} ${u} (${sgn(l.price - t.base_price, 2)} ${u} mot föregående stängning) · du äger inte aktien, så diagrammet visar kursen`;
+        if (t.error) txt += " · " + t.error;
+        nt.textContent = txt; return;
+      }
       txt = `Handelsdag ${t.date}${t.live ? " (pågår)" : ""} · ${({"1m": "1 minuts", "5m": "5 minuters"})[t.interval] || "15 minuters"} upplösning · senast ${hhmm(l)}: ${fmt(l.value)} ${home} ` +
             `(${sgn(l.value - t.base_value)} ${home} mot föregående stängning)` +
             (state.config.price_ccy !== home ? " · valutan är fast på senaste ECB-kurs" : "");
@@ -543,7 +558,9 @@ function updateChartMeta() {
     }
     nt.textContent = txt;
   } else {
-    lg.innerHTML = `<span><i></i>Värde</span><span><i class="ref"></i>Anskaffningsvärde (kvarvarande)</span>`;
+    lg.innerHTML = watching() ? `<span><i></i>Kurs</span><span><i class="ref"></i>Start av perioden</span>`
+      : `<span><i></i>Värde</span><span><i class="ref"></i>Anskaffningsvärde (kvarvarande)</span>`;
+    if (watching()) { nt.textContent = "Du äger inte aktien än, så diagrammet visar kursen i " + state.config.price_ccy + "."; return; }
     nt.textContent = state.config.kind === "fund" ? "Ett värde per dag (fondens NAV). Historiken hämtas från första köpet." : "Ett värde per handelsdag (stängningskurs). Historiken hämtas från första köpet och uppdateras en gång per dag.";
   }
 }
@@ -552,8 +569,8 @@ function drawHoldingChart() {
   updateChartMeta();
   const intra = range === -1, home = state.config.home_ccy;
   drawChart($("chart"), holdingSeries(), {
-    home, pccy: state.config.price_ccy, showPrice: true,
-    refLabel: intra ? "Föreg. stängning" : "Anskaffning", gainLabel: intra ? "Mot föreg. stängning" : "Utveckling",
+    home: watching() ? state.config.price_ccy : home, pccy: state.config.price_ccy, showPrice: !watching(),
+    refLabel: intra ? "Föreg. stängning" : watching() ? "Periodens start" : "Anskaffning", gainLabel: intra ? "Mot föreg. stängning" : "Utveckling",
     empty: intra ? ((state.intraday && state.intraday.error) || "Ingen intradagsdata ännu.") : "Grafen visas när det finns minst två dagars data.",
     aria: `Värdet av ${state.config.name} över tid i ${home}`,
   });

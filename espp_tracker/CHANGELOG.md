@@ -4,6 +4,11 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [2.5.1] - 2026-11-24
+
+### Rättat
+- Aktier du bevakar men inte äger (inga transaktioner) visade ett diagram med värdet 0. Nu ritas kursen i aktiens valuta, både i vyn Idag och för 1 mån till Allt.
+
 ## [2.5.0] - 2026-11-24
 
 ### Tillagt

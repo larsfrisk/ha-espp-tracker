@@ -82,7 +82,7 @@
       <div class="sub" id="asof"></div>
     </div>
     <div>
-      <button class="btn" id="refresh">↻ Uppdatera kurser</button>
+      <button class="btn" id="refresh">↻ Hämta kurser nu</button>
     </div>
   </header>
 
@@ -105,6 +105,7 @@
     <div class="legend">
       <span><i></i>Värde</span><span><i class="ref"></i>Anskaffningsvärde (kvarvarande aktier)</span>
     </div>
+    <div class="sub">Ett värde per handelsdag (stängningskurs). Kurserna hämtas en gång per dag.</div>
     <div id="chart"></div>
     <details>
       <summary>Visa som tabell</summary>
@@ -182,7 +183,7 @@ function render() {
   } else {
     const d = s.day;
     document.getElementById("asof").textContent =
-      `Kurs per ${s.as_of} (jämfört med ${s.prev}) · hämtad ${fetched_at.replace("T", " ")}`;
+      `Stängningskurs ${s.as_of} (jämfört med ${s.prev}) · hämtad ${fetched_at.replace("T", " ")} · nästa automatiska hämtning ${state.next_update.replace("T", " ")}`;
     top.innerHTML = `
       <div class="sub">Värde av ditt innehav</div>
       <div class="hero">${fmt(s.value)}<small>${home}</small></div>

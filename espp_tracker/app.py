@@ -37,7 +37,8 @@ DEFAULT_CONFIG = {
     "symbol": "6501.T",      # Tokyo Stock Exchange. Ändra om dina aktier är t.ex. ADR/OTC.
     "price_ccy": "JPY",      # valutan aktien handlas i
     "home_ccy": "SEK",       # valutan du vill se värdet i
-    "cache_minutes": 15,
+    "update_time": "16:30",   # daglig kurshämtning (lokal tid), efter Tokyo-stängning och ECB-kurser
+    "publish_minutes": 15,    # hur ofta sensorer skickas till HA (använder sparade kurser, hämtar inget nytt)
 }
 
 DEMO = False
@@ -97,13 +98,12 @@ def fetch_prices(symbol, start):
     for ts, c in zip(res["timestamp"], closes):
         if c is None:
             continue
-        d = dt.datetime.utcfromtimestamp(ts + off).date().isoformat()
+        d = dt.datetime.fromtimestamp(ts + off, dt.timezone.utc).date().isoformat()
         out[d] = float(c)
-    # Pågående handelsdag: använd senaste kurs som dagens värde
-    last = res["meta"].get("regularMarketPrice")
-    ts = res["meta"].get("regularMarketTime")
-    if last is not None and ts:
-        out[dt.datetime.utcfromtimestamp(ts + off).date().isoformat()] = float(last)
+    # Pågående handelsdag tas bort: diagrammet har en avslutad stängningskurs per dag
+    reg = res["meta"].get("currentTradingPeriod", {}).get("regular", {})
+    if reg.get("start") and reg.get("end") and time.time() < reg["end"]:
+        out.pop(dt.datetime.fromtimestamp(reg["start"] + off, dt.timezone.utc).date().isoformat(), None)
     return out, {"currency": res["meta"].get("currency"), "exchange": res["meta"].get("exchangeName")}
 
 
@@ -130,6 +130,33 @@ def demo_data(start):
     return prices, fx, {"currency": "JPY", "exchange": "DEMO"}
 
 
+def _hhmm(cfg):
+    try:
+        h, m = map(int, str(cfg.get("update_time", "16:30")).split(":"))
+        assert 0 <= h < 24 and 0 <= m < 60
+        return h, m
+    except Exception:
+        return 16, 30
+
+
+def last_due(now_ts, cfg):
+    """Senaste planerade uppdateringstidpunkten (epoch)."""
+    h, m = _hhmm(cfg)
+    now = dt.datetime.fromtimestamp(now_ts)
+    due = now.replace(hour=h, minute=m, second=0, microsecond=0)
+    if due > now:
+        due -= dt.timedelta(days=1)
+    return due.timestamp()
+
+
+def next_due(now_ts, cfg):
+    h, m = _hhmm(cfg)
+    return (dt.datetime.fromtimestamp(last_due(now_ts, cfg)) + dt.timedelta(days=1)).replace(hour=h, minute=m)
+
+
+CACHE_VERSION = 2
+
+
 def get_market(cfg, start):
     """Hämtar (med cache) kurser och valuta. Returnerar (prices, fx, meta, fetched_at, error)."""
     cache = _read_json(CACHE_FILE, {})
@@ -139,7 +166,8 @@ def get_market(cfg, start):
         not DEMO
         and cache.get("key") == list(key)
         and cache.get("start", "9999") <= start.isoformat()
-        and now - cache.get("fetched_at", 0) < cfg["cache_minutes"] * 60
+        and cache.get("v") == CACHE_VERSION
+        and cache.get("fetched_at", 0) >= last_due(now, cfg)   # en hämtning per dag
     )
     if fresh:
         return cache["prices"], cache["fx"], cache["meta"], cache["fetched_at"], None
@@ -149,7 +177,7 @@ def get_market(cfg, start):
     try:
         prices, meta = fetch_prices(cfg["symbol"], start)
         fx = fetch_fx(cfg["price_ccy"], cfg["home_ccy"], start - dt.timedelta(days=7))
-        _write_json(CACHE_FILE, {"key": list(key), "start": start.isoformat(), "fetched_at": now,
+        _write_json(CACHE_FILE, {"v": CACHE_VERSION, "key": list(key), "start": start.isoformat(), "fetched_at": now,
                                  "prices": prices, "fx": fx, "meta": meta})
         return prices, fx, meta, now, None
     except Exception as e:  # nätverk, ändrat API, osv.
@@ -285,6 +313,7 @@ def build_summary():
         "config": cfg, "meta": meta, "demo": DEMO, "error": err,
         "fetched_at": dt.datetime.fromtimestamp(fetched_at).isoformat(timespec="seconds"),
         "summary": summ, "has_lots": bool(lots),
+        "next_update": next_due(time.time(), cfg).isoformat(timespec="minutes"),
     }
 
 
@@ -463,7 +492,7 @@ def publisher_loop():
                 publish_to_ha()
         except Exception as e:
             print("Publicering misslyckades: %s" % e, flush=True)
-        time.sleep(load_config()["cache_minutes"] * 60)
+        time.sleep(load_config()["publish_minutes"] * 60)
 
 
 # ---------------------------------------------------------------- rapport

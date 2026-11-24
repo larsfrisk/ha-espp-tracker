@@ -1,6 +1,6 @@
 name: "ESPP-tracker"
 description: "Följ ditt Hitachi ESPP-innehav dagligen i SEK, med sensorer till Home Assistant"
-version: "1.0.0"
+version: "1.1.0"
 slug: "espp_tracker"
 init: false
 arch:

@@ -4,7 +4,8 @@ Följ ditt Hitachi-innehav (ESPP) dagligen i SEK: värde, förändring sedan ig�
 valuta), orealiserad och realiserad vinst. Köp och försäljningar läggs in för hand i efterhand.
 Vinst vid försäljning räknas med genomsnittsmetoden. Det är uppföljning, inte skatteunderlag.
 
-Kurser: Yahoo Finance (6501.T, JPY, inofficiellt API) och ECB-kurser via Frankfurter (JPY/SEK).
+Kurser: Yahoo Finance (6501.T, JPY, inofficiellt API) och ECB-kurser via Frankfurter (JPY/SEK), hämtade
+en gång per dag (16:30 lokal tid). Diagrammet visar en avslutad stängningskurs per handelsdag.
 Appen loggar aldrig in hos din bank eller förvaltare och har ingen kontakt med JP Morgan.
 
 ## Installera i Home Assistant (HAOS/Supervised)
@@ -20,7 +21,7 @@ Köpen sparas i appens egen datamapp och följer med i Home Assistants säkerhet
 
 `sensor.espp_value`, `espp_day_change`, `espp_day_change_pct`, `espp_unrealized_gain`,
 `espp_unrealized_gain_pct`, `espp_realized_gain`, `espp_total_gain`, `espp_cost`, `espp_shares`,
-`espp_price`, `espp_fx`. Uppdateras var 15:e minut. Appen har `homeassistant_api: true`, vilket ger den
+`espp_price`, `espp_fx`. Skickas om var 15:e minut från sparade kurser. Appen har `homeassistant_api: true`, vilket ger den
 administratörsliknande åtkomst till HA:s API.
 
 ## Köra utanför Home Assistant
@@ -36,4 +37,4 @@ Kräver bara Python 3.9+. Data sparas i `espp_tracker/data/` (ligger i `.gitigno
 ## Känt
 
 - Yahoo Finances chart-API är inofficiellt och kan ändras. Misslyckas hämtningen visas senast sparade kurser.
-- Ändra aktie eller valuta i `data/config.json` (`symbol`, `price_ccy`, `home_ccy`).
+- Ändra aktie, valuta eller hämtningstid i `data/config.json` (`symbol`, `price_ccy`, `home_ccy`, `update_time`).

@@ -4,6 +4,11 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [2.6.1] - 2026-11-24
+
+### Ändrat
+- Sektionerna "Signaler under dagen" och "Nyckeltal och tekniska signaler" kan fällas ihop och ut med **Visa detaljer / Dölj detaljer**. I hopfällt läge visas bara rubriken och den samlade signalen. Standard är hopfälld, och valet kommer ihåg i webbläsaren.
+
 ## [2.6.0] - 2026-11-24
 
 ### Tillagt

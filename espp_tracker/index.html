@@ -71,6 +71,8 @@
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   th, td { text-align: right; padding: 8px 6px; border-bottom: 1px solid var(--line); font-size: 14px; }
   th:first-child, td:first-child { text-align: left; }
+  .sigtoggle { margin-left: auto; font: inherit; font-size: 13px; color: var(--ink2); background: none; border: 1px solid var(--line, #ddd); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+  .sigtoggle:hover { color: var(--ink); }
   th { color: var(--ink2); font-weight: 500; font-size: 12px; }
   td .del { border: 0; background: none; color: var(--ink3); cursor: pointer; font-size: 16px; }
   td .del:hover { color: var(--bad); }
@@ -160,7 +162,7 @@
     <section class="card" id="daysig" hidden></section>
 
     <section class="card" id="sigcard">
-      <div class="bar"><h2>Nyckeltal och tekniska signaler</h2></div>
+      <div class="bar"><h2>Nyckeltal och tekniska signaler</h2><span id="techtoggle"></span></div>
       <div id="sigbody"><div class="empty">Laddar…</div></div>
     </section>
 
@@ -436,6 +438,18 @@ function renderHolding() {
 /* klockslag i webbläsarens tidszon (inte serverns), så att det alltid stämmer med din klocka */
 const hhmm = p => p.ts ? new Date(p.ts * 1000).toLocaleTimeString("sv-SE", {hour: "2-digit", minute: "2-digit"}) : p.t;
 
+let sigOpen = {day: false, tech: false};
+try { sigOpen = Object.assign(sigOpen, JSON.parse(localStorage.getItem("sigOpen") || "{}")); } catch (e) { /* ingen lagring */ }
+const toggleBtn = k => `<button class="sigtoggle" data-k="${k}" aria-expanded="${sigOpen[k]}">${sigOpen[k] ? "Dölj detaljer ▴" : "Visa detaljer ▾"}</button>`;
+const detailStart = k => `<div class="sigdetail" data-k="${k}" ${sigOpen[k] ? "" : "hidden"}>`;
+document.addEventListener("click", e => {
+  const b = e.target.closest(".sigtoggle"); if (!b) return;
+  const k = b.dataset.k; sigOpen[k] = !sigOpen[k];
+  try { localStorage.setItem("sigOpen", JSON.stringify(sigOpen)); } catch (x) { /* ok */ }
+  document.querySelectorAll(`.sigtoggle[data-k="${k}"]`).forEach(x => { x.setAttribute("aria-expanded", sigOpen[k]); x.textContent = sigOpen[k] ? "Dölj detaljer ▴" : "Visa detaljer ▾"; });
+  document.querySelectorAll(`.sigdetail[data-k="${k}"]`).forEach(x => x.hidden = !sigOpen[k]);
+});
+
 async function loadSignals(refresh) {
   const id = state.config.id, box = $("sigbody");
   $("sigcard").hidden = state.config.source === "manual";
@@ -445,7 +459,7 @@ async function loadSignals(refresh) {
   try { s = await api("api/holdings/" + encodeURIComponent(id) + "/signals" + (refresh ? "?refresh=1" : "")); }
   catch (e) { s = {error: e.message}; }
   if (!state || state.config.id !== id) return;
-  if (s.error) { box.innerHTML = `<div class="empty">${esc(s.error)}</div>`; return; }
+  if (s.error) { box.innerHTML = `<div class="empty">${esc(s.error)}</div>`; $("techtoggle").innerHTML = ""; return; }
   const m = s.metrics, pc = s.price_ccy, v = s.verdict;
   const vcls = v.signal > 0 ? "up" : v.signal < 0 ? "down" : "";
   const rt = (l, k) => `<tr><td>${l}</td><td class="${cls(m.ret[k])}">${m.ret[k] == null ? "–" : pct(m.ret[k])}</td></tr>`;
@@ -456,6 +470,7 @@ async function loadSignals(refresh) {
     <div class="sub">Algoritmens samlade signal (${s.indicators.length} regler, kurser till ${esc(s.as_of)})</div>
     <div class="hero ${vcls}" style="font-size:1.6rem">${esc(v.label)}</div>
     <div class="sub">Poäng ${v.score == null ? "–" : sgn(v.score, 2)} på skalan −1 (alla regler negativa) till +1 (alla positiva).</div>
+    ${detailStart("tech")}
     ${s.warning ? `<div class="banner err">${esc(s.warning)}</div>` : ""}
     <div class="tablewrap"><table><thead><tr><th>Regel</th><th>Värde</th><th>Signal</th></tr></thead><tbody>${
       s.indicators.map(i => `<tr><td>${esc(i.name)}<div class="sub">${esc(i.note)}</div></td><td>${esc(i.value)}</td><td>${dot(i.signal)}</td></tr>`).join("")}</tbody></table></div>
@@ -478,7 +493,8 @@ async function loadSignals(refresh) {
     <div class="hint"><b>Viktigt:</b> Det här är mekaniska regler som används i algoritmisk handel (trendföljning, momentum, återgång till medelvärdet),
       beräknade på historiska kurser. De är <b>inte personlig investeringsrådgivning</b> och ingen rekommendation att köpa eller sälja.
       Reglerna tar inte hänsyn till bolagets ekonomi, nyheter, din skatt eller din situation, och historiskt utfall garanterar inget om framtiden.
-      Nyckeltal som P/E och utdelning ingår inte, eftersom datakällan bara har kurser.</div>`;
+      Nyckeltal som P/E och utdelning ingår inte, eftersom datakällan bara har kurser.</div></div>`;
+  $("techtoggle").innerHTML = toggleBtn("tech");
 }
 
 function renderDaySignals() {
@@ -490,10 +506,11 @@ function renderDaySignals() {
   const dot = n => `<span class="${n > 0 ? "up" : n < 0 ? "down" : ""}">${n > 0 ? "▲ positiv" : n < 0 ? "▼ negativ" : "■ neutral"}</span>`;
   const last = i.points.length ? hhmm(i.points[i.points.length - 1]) : "";
   box.innerHTML = `
-    <div class="bar"><h2>Signaler under dagen</h2></div>
+    <div class="bar"><h2>Signaler under dagen</h2>${toggleBtn("day")}</div>
     <div class="sub">Baserat på ${i.points.length} staplar t.o.m. ${last}${i.live ? "" : " (börsen är stängd, visar senaste handelsdagen)"}</div>
     <div class="hero ${vcls}" style="font-size:1.6rem">${esc(v.label)}</div>
     <div class="sub">Poäng ${v.score == null ? "–" : sgn(v.score, 2)} på skalan −1 till +1.</div>
+    ${detailStart("day")}
     <div class="banner err">Yahoo fördröjer ofta svenska kurser med ca 15 minuter, så signalen visar läget som det var för en stund sedan. Den är inte lämplig som underlag för snabba affärer.</div>
     <div class="tablewrap"><table><thead><tr><th>Regel</th><th>Värde</th><th>Signal</th></tr></thead><tbody>${
       s.indicators.map(x => `<tr><td>${esc(x.name)}<div class="sub">${esc(x.note)}</div></td><td>${esc(x.value)}</td><td>${dot(x.signal)}</td></tr>`).join("")}</tbody></table></div>
@@ -502,7 +519,7 @@ function renderDaySignals() {
       s.flips.map(f => `<tr><td>${hhmm(f)}</td><td class="${f.signal > 0 ? "up" : f.signal < 0 ? "down" : ""}">${esc(f.label)}</td></tr>`).join("")}</tbody></table></div>
     <div class="hint"><b>Viktigt:</b> Mekaniska regler på kursstaplar, <b>inte personlig investeringsrådgivning</b> och ingen rekommendation att köpa eller sälja.
       Daytrading är riskfylld: courtage och spread äter ofta upp små rörelser, och de flesta privatpersoner som daytradar förlorar pengar över tid.
-      Reglerna byter signal ofta i sidledes marknad, och historik garanterar inget.</div>`;
+      Reglerna byter signal ofta i sidledes marknad, och historik garanterar inget.</div></div>`;
 }
 
 function renderNavs() {

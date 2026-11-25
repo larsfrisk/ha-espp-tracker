@@ -438,11 +438,30 @@ function renderHolding() {
 /* klockslag i webbläsarens tidszon (inte serverns), så att det alltid stämmer med din klocka */
 const hhmm = p => p.ts ? new Date(p.ts * 1000).toLocaleTimeString("sv-SE", {hour: "2-digit", minute: "2-digit"}) : p.t;
 
+let ibtCost = "0.10";
 let sigOpen = {day: false, tech: false};
 try { sigOpen = Object.assign(sigOpen, JSON.parse(localStorage.getItem("sigOpen") || "{}")); } catch (e) { /* ingen lagring */ }
 const toggleBtn = k => `<button class="sigtoggle" data-k="${k}" aria-expanded="${sigOpen[k]}">${sigOpen[k] ? "Dölj detaljer ▴" : "Visa detaljer ▾"}</button>`;
 const detailStart = k => `<div class="sigdetail" data-k="${k}" ${sigOpen[k] ? "" : "hidden"}>`;
-document.addEventListener("click", e => {
+document.addEventListener("click", async e => {
+  const run = e.target.closest("#ibtrun");
+  if (run) {
+    const out = $("ibtout"), c = ($("ibtcost").value || "0.1").replace(",", ".");
+    ibtCost = c; out.innerHTML = `<div class="empty">Hämtar historik och räknar…</div>`; run.disabled = true;
+    try {
+      const r = await api("api/holdings/" + encodeURIComponent(state.config.id) + "/intraday-backtest?cost=" + encodeURIComponent(c));
+      if (r.error) out.innerHTML = `<div class="empty">${esc(r.error)}</div>`;
+      else if (!r.rows.length) out.innerHTML = `<div class="empty">Inte tillräckligt med intradagshistorik.${r.errors.length ? " " + esc(r.errors.join("; ")) : ""}</div>`;
+      else {
+        const best = r.rows.reduce((a, b) => b.net > a.net ? b : a);
+        out.innerHTML = `<table><thead><tr><th>Upplösning</th><th>Dagar</th><th>Affärer</th><th>Före kostnad</th><th>Efter kostnad</th><th>Vinstandel</th><th>Bara äga (handelstid)</th><th>Största nedgång</th></tr></thead><tbody>` +
+          r.rows.map(x => `<tr><td>${esc(x.interval.replace("m", " min"))}</td><td>${x.days}</td><td>${x.trades}</td><td class="${cls(x.gross)}">${pct(x.gross)}</td>
+            <td class="${cls(x.net)}"><b>${pct(x.net)}</b></td><td>${x.winrate == null ? "–" : fmt(x.winrate, 0) + " %"}</td><td class="${cls(x.buyhold)}">${pct(x.buyhold)}</td><td>${fmt(x.maxdd, 1)} %</td></tr>`).join("") +
+          `</tbody></table><div class="sub">Kostnad ${esc(c)} % per affär (köp och sälj). Bäst efter kostnad här: ${esc(best.interval.replace("m", " min"))}. Perioderna är korta och olika långa, så jämförelsen är ett fingervisning och inget bevis.${r.errors.length ? " Fel: " + esc(r.errors.join("; ")) : ""}</div>`;
+      }
+    } catch (x) { out.innerHTML = `<div class="banner err">${esc(x.message)}</div>`; }
+    run.disabled = false; return;
+  }
   const b = e.target.closest(".sigtoggle"); if (!b) return;
   const k = b.dataset.k; sigOpen[k] = !sigOpen[k];
   try { localStorage.setItem("sigOpen", JSON.stringify(sigOpen)); } catch (x) { /* ok */ }
@@ -517,6 +536,14 @@ function renderDaySignals() {
     <h3 style="margin:14px 0 4px">Signalbyten idag</h3>
     <div class="tablewrap"><table><tbody>${
       s.flips.map(f => `<tr><td>${hhmm(f)}</td><td class="${f.signal > 0 ? "up" : f.signal < 0 ? "down" : ""}">${esc(f.label)}</td></tr>`).join("")}</tbody></table></div>
+    <h3 style="margin:14px 0 4px">Backtest: 1, 5 eller 15 minuter?</h3>
+    <div class="sub">Kör samma regler på Yahoos senaste intradagshistorik (1 min: ca 7 dagar, 5 och 15 min: ca en månad). Du köper en stapel efter en Köpsignal, säljer när signalen släpper och är alltid ute vid dagens slut.</div>
+    <div class="bar" style="gap:8px;justify-content:flex-start;margin-top:6px">
+      <label class="sub" style="display:flex;align-items:center;gap:6px">Kostnad per affär (courtage + spread), %
+        <input id="ibtcost" inputmode="decimal" value="${esc(String(ibtCost))}" style="width:70px"></label>
+      <button class="btn" id="ibtrun">Kör backtest</button>
+    </div>
+    <div id="ibtout" class="tablewrap"></div>
     <div class="hint"><b>Viktigt:</b> Mekaniska regler på kursstaplar, <b>inte personlig investeringsrådgivning</b> och ingen rekommendation att köpa eller sälja.
       Daytrading är riskfylld: courtage och spread äter ofta upp små rörelser, och de flesta privatpersoner som daytradar förlorar pengar över tid.
       Reglerna byter signal ofta i sidledes marknad, och historik garanterar inget.</div></div>`;

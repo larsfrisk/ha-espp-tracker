@@ -4,6 +4,11 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [2.7.0] - 2026-11-25
+
+### Tillagt
+- Intradagsbacktest under "Signaler under dagen": kör samma sex regler på 1, 5 och 15 minuters historik (Yahoo ger ca 7 dagar för 1 min och ca en månad för 5 och 15 min) och jämför före och efter kostnad. Du anger kostnad per affär (courtage + spread), och resultatet jämförs med att bara äga under handelstid. Köp sker en stapel efter signalen och ingen position hålls över natten.
+
 ## [2.6.1] - 2026-11-24
 
 ### Ändrat

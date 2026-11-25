@@ -722,6 +722,65 @@ def build_signals(h, refresh=False):
     return res
 
 
+BT_RUNS = (("1m", "7d"), ("5m", "1mo"), ("15m", "1mo"))   # Yahoo: 1m max 7 dagar, 5m/15m max 60 dagar
+
+
+def fetch_bars(symbol, interval, rng):
+    url = "https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=%s&range=%s" % (urllib.parse.quote(symbol), interval, rng)
+    res = _http_json(url)["chart"]["result"][0]
+    q = res["indicators"]["quote"][0]
+    vols, opens = q.get("volume") or [], q.get("open") or []
+    bars = []
+    for i, (ts, c) in enumerate(zip(res["timestamp"], q["close"])):
+        if c is None:
+            continue
+        bars.append([ts, float(c), (vols[i] if i < len(vols) and vols[i] else 0), (opens[i] if i < len(opens) else None)])
+    return bars, res["meta"].get("gmtoffset", 0)
+
+
+def demo_bars(symbol, interval, days):
+    per = {"1m": 510, "5m": 102, "15m": 34}[interval]
+    step = {"1m": 60, "5m": 300, "15m": 900}[interval]
+    rnd = random.Random(zlib.crc32((symbol + interval).encode()))
+    p, bars = 100.0 + zlib.crc32(symbol.encode()) % 200, []
+    d0 = dt.datetime.combine(dt.date.today() - dt.timedelta(days=days), dt.time(8, 0), tzinfo=dt.timezone.utc)
+    for d in range(days):
+        day = d0 + dt.timedelta(days=d)
+        if day.weekday() >= 5:
+            continue
+        for j in range(per):
+            p *= math.exp(rnd.gauss(0, 0.0012 * math.sqrt(step / 60.0)))
+            bars.append([int(day.timestamp()) + j * step, round(p, 2), rnd.randint(100, 5000), None])
+    return bars, 0
+
+
+def build_intraday_backtest(h, cost, refresh=False):
+    cfg = holding_cfg(h)
+    if cfg["source"] == "manual" or cfg["kind"] == "fund":
+        return {"error": "Intradagsbacktest finns bara för aktier och ETF:er."}
+    cache_file = cache_path(h, "ibt")
+    cache = _read_json(cache_file, {}) if not DEMO else {}
+    now, rows, errs = time.time(), [], []
+    for iv, rng in BT_RUNS:
+        c = cache.get(iv)
+        if not (c and not refresh and c.get("symbol") == cfg["symbol"] and now - c.get("fetched_at", 0) < 3600):
+            try:
+                bars, off = demo_bars(cfg["symbol"], iv, 10 if iv == "1m" else 42) if DEMO else fetch_bars(cfg["symbol"], iv, rng)
+                c = {"symbol": cfg["symbol"], "fetched_at": now, "bars": bars, "off": off}
+                cache[iv] = c
+            except Exception as e:
+                errs.append("%s: %s" % (iv, e))
+                if not c:
+                    continue
+        r = signals.backtest_bars(c["bars"], c["off"], cost)
+        if r:
+            r["interval"] = iv
+            rows.append(r)
+    if not DEMO and cache:
+        _write_json(cache_file, cache)
+    return {"cost": cost, "rows": rows, "errors": errs, "price_ccy": cfg["price_ccy"]}
+
+
 def build_intraday(h, refresh=False):
     cfg = holding_cfg(h)
     base = {"points": [], "price_ccy": cfg["price_ccy"], "home_ccy": cfg["home_ccy"]}
@@ -793,7 +852,7 @@ def validate_lot(body, holdings):
 
 # ---------------------------------------------------------------- HTTP
 
-RE_HOLDING_API = re.compile(r"^/api/holdings/([a-z0-9_-]+)/(summary|intraday|signals)$")
+RE_HOLDING_API = re.compile(r"^/api/holdings/([a-z0-9_-]+)/(summary|intraday|signals|intraday-backtest)$")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -857,6 +916,12 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 if m.group(2) == "signals":
                     return self._send(200, build_signals(h, refresh))
+                if m.group(2) == "intraday-backtest":
+                    try:
+                        cost = min(2.0, max(0.0, float(urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("cost", ["0.1"])[0])))
+                    except ValueError:
+                        cost = 0.1
+                    return self._send(200, build_intraday_backtest(h, cost, refresh))
                 return self._send(200, build_summary(h, refresh) if m.group(2) == "summary" else build_intraday(h, refresh))
         self._send(404, {"error": "Hittades inte"})
 

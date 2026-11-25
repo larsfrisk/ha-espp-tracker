@@ -263,3 +263,104 @@ def intraday(closes, n_today, vwaps=None, day_open=None):
             cur = vd["signal"]
     inds = intraday_indicators(closes, vwaps[-1], day_open)
     return {"indicators": inds, "verdict": verdict(inds), "flips": flips}
+
+
+# ---------------------------------------------------------------- intradagsbacktest
+
+def signal_series(closes, vwaps, opens):
+    """Samma sex regler som intraday(), men för varje stapel i ett svep. Returnerar +1/0/-1 (eller None)."""
+    n = len(closes)
+    e9, e21 = ema_series(closes, 9), ema_series(closes, 21)
+    e12, e26 = ema_series(closes, 12), ema_series(closes, 26)
+    m = [a - b for a, b in zip(e12, e26)]
+    sg = ema_series(m, 9)
+    rs = [None] * n
+    if n > 14:
+        g = l = 0.0
+        for i in range(1, 15):
+            d = closes[i] - closes[i - 1]
+            g, l = g + max(d, 0), l + max(-d, 0)
+        ag, al = g / 14, l / 14
+        rs[14] = 100.0 if al == 0 and ag > 0 else 50.0 if al == 0 else 100 - 100 / (1 + ag / al)
+        for i in range(15, n):
+            d = closes[i] - closes[i - 1]
+            ag = (ag * 13 + max(d, 0)) / 14
+            al = (al * 13 + max(-d, 0)) / 14
+            rs[i] = 100.0 if al == 0 and ag > 0 else 50.0 if al == 0 else 100 - 100 / (1 + ag / al)
+    out = []
+    for i in range(n):
+        votes = []
+        if i + 1 >= 21:
+            votes.append(1 if e9[i] > e21[i] else -1)
+        if vwaps[i]:
+            votes.append(1 if closes[i] > vwaps[i] else -1)
+        if i + 1 >= 35:
+            votes.append(1 if m[i] - sg[i] > 0 else -1)
+        if rs[i] is not None:
+            votes.append(1 if rs[i] < 30 else -1 if rs[i] > 70 else 0)
+        if i + 1 >= 20:
+            w = closes[i - 19:i + 1]
+            mid = sum(w) / 20
+            sd = math.sqrt(sum((x - mid) ** 2 for x in w) / 20)
+            lo, hi = mid - 2 * sd, mid + 2 * sd
+            pb = (closes[i] - lo) / (hi - lo) if hi > lo else 0.5
+            votes.append(1 if pb < 0 else -1 if pb > 1 else 0)
+        if opens[i]:
+            votes.append(1 if closes[i] > opens[i] else -1 if closes[i] < opens[i] else 0)
+        out.append(verdict([{"signal": x} for x in votes])["signal"] if votes else None)
+    return out
+
+
+def backtest_bars(bars, off, cost_pct):
+    """bars: [[ts, close, volym, öppning], ...] sorterade. Köper en stapel efter en Köpsignal, säljer när signalen
+    inte längre är Köp och är alltid ute vid dagens sista stapel (ingen position över natten).
+    cost_pct = kostnad per affär (courtage + spread) i % av beloppet, tas vid både köp och sälj."""
+    import datetime as dt
+    n = len(bars)
+    if n < 60:
+        return None
+    day = [dt.datetime.fromtimestamp(b[0] + off, dt.timezone.utc).date() for b in bars]
+    closes = [b[1] for b in bars]
+    vw, opens, cv, cpv, cur = [], [], 0.0, 0.0, None
+    for i, b in enumerate(bars):
+        if day[i] != cur:
+            cur, cv, cpv, dopen = day[i], 0.0, 0.0, (b[3] or b[1])
+        cv, cpv = cv + b[2], cpv + b[1] * b[2]
+        vw.append(cpv / cv if cv else None)
+        opens.append(dopen)
+    sig = signal_series(closes, vw, opens)
+    c = cost_pct / 100.0
+    start = 35
+    eq = hold = 1.0
+    gross = 1.0
+    pos_prev, trades, wins, ent, costs, peak, dd = 0, 0, 0, None, 0.0, 1.0, 0.0
+    for i in range(start, n):
+        new_day = day[i] != day[i - 1]
+        last_of_day = i + 1 >= n or day[i + 1] != day[i]
+        # position under stapeln i-1 -> i bestäms av signalen på stapel i-2 (en stapels fördröjning)
+        want = 1 if (sig[i - 2] == 1 and not new_day and day[i - 2] == day[i]) else 0
+        if want and last_of_day:
+            want = 0   # ute vid dagens slut
+        if not new_day:
+            if pos_prev:
+                r = closes[i] / closes[i - 1]
+                eq *= r
+                gross *= r
+            hold *= closes[i] / closes[i - 1]
+        if want != pos_prev:
+            eq *= (1 - c)
+            costs += c * 100
+            if want:
+                ent = eq
+            else:
+                trades += 1
+                wins += 1 if ent and eq > ent else 0
+        elif new_day and pos_prev:
+            pass
+        pos_prev = want
+        peak = max(peak, eq)
+        dd = min(dd, eq / peak - 1)
+    days = len(set(day[start:]))
+    return {"bars": n - start, "days": days, "trades": trades, "gross": (gross - 1) * 100, "net": (eq - 1) * 100,
+            "costs": costs, "winrate": (wins / trades * 100) if trades else None, "buyhold": (hold - 1) * 100,
+            "maxdd": dd * 100}

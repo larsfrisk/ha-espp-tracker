@@ -4,6 +4,12 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [2.7.1] - 2026-11-25
+
+### Tillagt
+- Dagsdiagrammet (Idag) har en skala till höger med kurs per aktie (t.ex. JPY), förutom värdet i kronor till vänster. Skalorna följer varandra eftersom valutakursen är fast under dagen.
+- Den streckade linjen för föregående stängning har nu en text med kursen per aktie och värdet, till exempel "Föregående stängning 4 974,00 JPY (6 721 SEK)".
+
 ## [2.7.0] - 2026-11-25
 
 ### Tillagt

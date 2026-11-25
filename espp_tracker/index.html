@@ -632,6 +632,10 @@ function drawHoldingChart() {
   const intra = range === -1, home = state.config.home_ccy;
   drawChart($("chart"), holdingSeries(), {
     home: watching() ? state.config.price_ccy : home, pccy: state.config.price_ccy, showPrice: !watching(),
+    right: intra && !watching() && state.intraday && state.intraday.base_value > 0 && state.intraday.base_price > 0
+      ? {factor: state.intraday.base_price / state.intraday.base_value, ccy: state.config.price_ccy + " / aktie"} : null,
+    refText: intra && state.intraday && state.intraday.base_price
+      ? `Föregående stängning ${fmt(state.intraday.base_price, 2)} ${state.config.price_ccy}` + (watching() ? "" : ` (${fmt(state.intraday.base_value)} ${home})`) : "",
     refLabel: intra ? "Föreg. stängning" : watching() ? "Periodens start" : "Anskaffning", gainLabel: intra ? "Mot föreg. stängning" : "Utveckling",
     empty: intra ? ((state.intraday && state.intraday.error) || "Ingen intradagsdata ännu.") : "Grafen visas när det finns minst två dagars data.",
     aria: `Värdet av ${state.config.name} över tid i ${home}`,
@@ -648,7 +652,7 @@ function niceTicks(lo, hi, n) {
 
 function drawChart(box, h, o) {
   if (h.length < 2) { box.innerHTML = `<div class="empty">${esc(o.empty)}</div>`; return; }
-  const W = 900, H = 320, m = {l: 62, r: 14, t: 12, b: 28};
+  const W = 900, H = 320, m = {l: 62, r: o.right ? 66 : 14, t: 12, b: 28};
   const iw = W - m.l - m.r, ih = H - m.t - m.b;
   const vals = h.flatMap(p => [p.value, p.invested]);
   let lo = Math.min(...vals), hi = Math.max(...vals);
@@ -658,14 +662,24 @@ function drawChart(box, h, o) {
   const ticks = niceTicks(lo, hi, 5);
   const nx = Math.min(6, h.length), xi = Array.from({length: nx}, (_, k) => Math.round(k * (h.length - 1) / (nx - 1 || 1)));
   const last = h[h.length - 1];
+  /* höger skala: kurs per aktie. price = value * o.right.factor (exakt när valutakursen är fast, dvs i dagsvyn) */
+  let rticks = [];
+  if (o.right) {
+    const f = o.right.factor, span = (hi - lo) * f, dec = span < 12 ? 2 : span < 120 ? 1 : 0;
+    rticks = niceTicks(lo * f, hi * f, 5).map(t => ({t, y: y(t / f), dec}));
+  }
+  const refY = y(h[0].invested);
   box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.aria)}">
     <g class="axis">
       ${ticks.map(t => `<line x1="${m.l}" x2="${W - m.r}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/>
         <text x="${m.l - 8}" y="${y(t) + 4}" text-anchor="end">${fmt(t)}</text>`).join("")}
+      ${rticks.map(r => `<text x="${W - m.r + 8}" y="${r.y + 4}" text-anchor="start">${fmt(r.t, r.dec)}</text>`).join("")}
+      ${o.right ? `<text x="${W - m.r + 8}" y="${m.t - 2}" text-anchor="start" font-size="10">${esc(o.right.ccy)}</text>` : ""}
       ${xi.map(i => `<text x="${x(i)}" y="${H - 8}" text-anchor="${i === 0 ? "start" : i === h.length - 1 ? "end" : "middle"}">${h[i].d}</text>`).join("")}
     </g>
     <path d="${path("invested")}" fill="none" stroke="var(--ref)" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round"/>
     <path d="${path("value")}" fill="none" stroke="var(--series1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${o.refText ? `<text x="${m.l + 6}" y="${refY - 6}" font-size="11" fill="var(--ink2)">${esc(o.refText)}</text>` : ""}
     <circle cx="${x(h.length - 1)}" cy="${y(last.value)}" r="4" fill="var(--series1)" stroke="var(--surface)" stroke-width="2"/>
     <g class="cross" style="display:none"><line class="cl" y1="${m.t}" y2="${m.t + ih}" stroke="var(--ink3)" stroke-width="1"/>
       <circle class="c1" r="4.5" fill="var(--series1)" stroke="var(--surface)" stroke-width="2"/>

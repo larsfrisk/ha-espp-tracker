@@ -244,6 +244,9 @@
 "use strict";
 const fmt = (n, d = 0) => n == null ? "–" : new Intl.NumberFormat("sv-SE", {minimumFractionDigits: d, maximumFractionDigits: d}).format(n);
 const sgn = (n, d = 0) => n == null ? "–" : (n > 0 ? "+" : n < 0 ? "−" : "") + fmt(Math.abs(n), d);
+/* klockslag i webbläsarens tidszon (servern kan stå på UTC) */
+const when = (ts, fallback) => ts ? new Date(ts * 1000).toLocaleString("sv-SE", {year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit"}) : String(fallback || "").replace("T", " ");
+const dayLabel = d => d === new Date().toLocaleDateString("sv-SE") ? "idag" : "senaste dagskursen (" + d + ")";
 const pct = (n) => n == null ? "–" : sgn(n, 2) + " %";
 const cls = (n) => n > 0 ? "up" : n < 0 ? "down" : "";
 const arrow = (n) => n > 0 ? "▲" : n < 0 ? "▼" : "■";
@@ -299,7 +302,7 @@ function renderNav(rt) {
 function renderOverview() {
   const p = portfolio, t = p.totals, home = p.config.home_ccy, d = t.day;
   p.errors.forEach(e => banner(e, true));
-  $("asof").textContent = p.fetched_at ? `Hämtad ${p.fetched_at.replace("T", " ")} · nästa automatiska hämtning ${p.next_update.replace("T", " ")}` : "";
+  $("asof").textContent = p.fetched_at ? `Hämtad ${when(p.fetched_ts, p.fetched_at)} · nästa automatiska hämtning ${when(p.next_ts, p.next_update)}` : "";
   const any = p.holdings.some(h => h.has_lots);
   if (!p.holdings.length || !any) {
     $("otop").innerHTML = `<div class="empty">${p.holdings.length
@@ -414,7 +417,7 @@ function renderHolding() {
     kp.innerHTML = "";
   } else {
     const d = s.day;
-    $("asof").textContent = `${fund ? "NAV" : "Stängningskurs"} ${s.as_of} (jämfört med ${s.prev}) · hämtad ${fetched_at.replace("T", " ")} · nästa automatiska hämtning ${state.next_update.replace("T", " ")}`;
+    $("asof").textContent = `${fund ? "NAV" : "Stängningskurs"} ${s.as_of} (jämfört med ${s.prev}) · hämtad ${when(state.fetched_ts, fetched_at)} · nästa automatiska hämtning ${when(state.next_ts, state.next_update)}`;
     const fxNote = pc !== home;
     top.innerHTML = `
       <div class="sub">Värde av ditt innehav</div>
@@ -426,8 +429,8 @@ function renderHolding() {
       ["Realiserad vinst (sålt)", `<span class="${cls(s.realized)}">${arrow(s.realized)} ${sgn(s.realized)} ${home}</span>`, s.lots.some(l => l.type === "sell") ? "genomsnittsmetoden" : "inga sälj än"],
       ["Totalt", `<span class="${cls(s.total)}">${arrow(s.total)} ${sgn(s.total)} ${home}</span>`, "orealiserat + realiserat"],
       [fund ? "Antal andelar" : "Antal aktier", fmt(s.shares, s.shares % 1 ? 3 : 0), `${s.buys} köp`],
-      [fund ? "NAV" : "Aktiekurs", `${fmt(s.price, 2)} ${pc}`, `<span class="${cls(d.price_pct)}">${pct(d.price_pct)}</span> idag`],
-      ...(fxNote ? [[`${pc}/${home}`, fmt(s.fx, 4), `<span class="${cls(s.fx - s.prev_fx)}">${pct((s.fx / s.prev_fx - 1) * 100)}</span> idag`]] : []),
+      [fund ? "NAV" : "Aktiekurs", `${fmt(s.price, 2)} ${pc}`, `<span class="${cls(d.price_pct)}">${pct(d.price_pct)}</span> ${dayLabel(s.as_of)}`],
+      ...(fxNote ? [[`${pc}/${home}`, fmt(s.fx, 4), `<span class="${cls(s.fx - s.prev_fx)}">${pct((s.fx / s.prev_fx - 1) * 100)}</span> ${dayLabel(s.as_of)}`]] : []),
       ["Anskaffningsvärde", `${fmt(s.cost)} ${home}`, s.avg_cost ? `${fmt(s.avg_cost, 1)} ${home} per ${fund ? "andel" : "aktie"}` : "inga andelar/aktier kvar"],
     ].map(([l, v, sub]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${sub}</div></div>`).join("");
   }

@@ -4,6 +4,13 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [2.8.1] - 2026-11-25
+
+### Rättat
+- Tiderna för "hämtad" och "nästa automatiska hämtning" visas nu i webbläsarens tidszon (tidigare serverns, som kunde vara UTC).
+- "Föregående stängning" i dagsdiagrammet tas nu från föregående handelsdag i intradagsdatan när dagskurserna saknar den dagen. Tidigare kunde diagrammet jämföra med en dags gammal stängning, så att procenten i diagrammet och i rutan Aktiekurs inte stämde överens.
+- Procenten i rutan Aktiekurs och valutarutan anger nu vilken dag den gäller ("idag" eller datumet) i stället för alltid "idag".
+
 ## [2.8.0] - 2026-11-25
 
 ### Tillagt

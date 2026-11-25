@@ -538,9 +538,9 @@ def build_summary(h, refresh=False):
     summ = compute(lots, cfg, prices, fx)
     return {
         "holding": h, "config": cfg, "meta": meta, "demo": DEMO, "error": err,
-        "fetched_at": dt.datetime.fromtimestamp(fetched_at).isoformat(timespec="seconds"),
+        "fetched_at": dt.datetime.fromtimestamp(fetched_at).isoformat(timespec="seconds"), "fetched_ts": fetched_at,
         "summary": summ, "has_lots": bool(lots),
-        "next_update": next_due(time.time(), cfg).isoformat(timespec="minutes"),
+        "next_update": next_due(time.time(), cfg).isoformat(timespec="minutes"), "next_ts": next_due(time.time(), cfg).timestamp(),
         "price_history": [{"d": d, "price": prices[d]} for d in sorted(prices)[-800:]],
         "navs": [{"date": d, "price": p} for d, p in sorted(prices.items(), reverse=True)] if cfg["source"] == "manual" else None,
     }
@@ -563,11 +563,11 @@ def _merge_histories(hists):
 
 def build_portfolio(refresh=False):
     cfg = load_config()
-    rows, errors, hists, fetched = [], [], [], []
+    rows, errors, hists, fetched, fetched_ts = [], [], [], [], []
     for h in load_holdings():
         d = build_summary(h, refresh)
         s = d["summary"]
-        fetched.append(d["fetched_at"])
+        fetched.append(d["fetched_at"]); fetched_ts.append(d["fetched_ts"])
         if d["error"]:
             errors.append("%s: %s" % (h["name"], d["error"]))
         row = {"id": h["id"], "name": h["name"], "symbol": h["symbol"], "price_ccy": h["price_ccy"],
@@ -593,8 +593,8 @@ def build_portfolio(refresh=False):
     prev = tv - dc
     return {
         "config": cfg, "demo": DEMO, "errors": errors, "holdings": rows, "history": _merge_histories(hists),
-        "fetched_at": max(fetched) if fetched else None,
-        "next_update": next_due(time.time(), cfg).isoformat(timespec="minutes"),
+        "fetched_at": max(fetched) if fetched else None, "fetched_ts": max(fetched_ts) if fetched_ts else None,
+        "next_update": next_due(time.time(), cfg).isoformat(timespec="minutes"), "next_ts": next_due(time.time(), cfg).timestamp(),
         "totals": {"value": tv, "cost": tc, "gain": gain, "gain_pct": gain / tc * 100 if tc else None,
                    "realized": realized, "total": gain + realized,
                    "day": {"change": dc, "pct": dc / prev * 100 if prev else None,
@@ -641,7 +641,10 @@ def fetch_intraday(symbol, interval="15m"):
     for _ts, c, v, _o in today:
         cv, cpv = cv + v, cpv + c * v
         vw.append(cpv / cv if cv else None)
+    older = [d for d in days if d < last]
+    pdate = max(older) if older else None
     return {"date": last, "live": live, "points": [[r[0], r[1]] for r in today], "interval": interval,
+            "prev_date": pdate, "prev_close": sorted(days[pdate])[-1][1] if pdate else None,
             "prior": prior, "vwaps": vw, "day_open": today[0][3] or today[0][1]}
 
 
@@ -798,7 +801,13 @@ def build_intraday(h, refresh=False):
     if not data:
         return dict(base, error=ierr)
     before = (dt.date.fromisoformat(data["date"]) - dt.timedelta(days=1)).isoformat()
-    base_price = P.at(before)
+    pd_ = data.get("prev_date")
+    if pd_ and pd_ in prices:                 # föregående handelsdag finns i dagskurserna: officiell stängning
+        base_price = prices[pd_]
+    elif data.get("prev_close"):              # dagskurserna saknar dagen: ta sista stapeln från intradagsdatan
+        base_price = data["prev_close"]
+    else:
+        base_price = P.at(before)
     pts = [{"ts": ts, "t": dt.datetime.fromtimestamp(ts).strftime("%H:%M"), "price": p,
             "value": shares * p * rate} for ts, p in data["points"]]
     sig = signals.intraday(list(data.get("prior") or []) + [p for _ts, p in data["points"]], len(data["points"]),

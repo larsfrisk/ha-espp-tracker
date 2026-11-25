@@ -604,38 +604,57 @@ function updateChartMeta() {
   if (range === -1) {
     const t = state.intraday || {}, pts = t.points || [], home = state.config.home_ccy;
     const w = watching(), u = w ? state.config.price_ccy : home;
-    lg.innerHTML = `<span><i></i>${w ? "Kurs" : "Värde"}</span><span><i class="ref"></i>Föregående stängning</span>`;
+    lg.innerHTML = `<span><i></i>${w ? "Kurs" : "Värde"}</span><span><i class="ref"></i>Föregående stängning</span>` +
+      (w ? "" : `<span class="sub">Höger skala: kurs per aktie (${esc(state.config.price_ccy)}) och % mot föreg. stängning</span>`);
     let txt = t.error || "";
     if (pts.length) {
       const l = pts[pts.length - 1];
       if (w) {
-        txt = `Handelsdag ${t.date}${t.live ? " (pågår)" : ""} · senast ${hhmm(l)}: ${fmt(l.price, 2)} ${u} (${sgn(l.price - t.base_price, 2)} ${u} mot föregående stängning) · du äger inte aktien, så diagrammet visar kursen`;
+        txt = `Handelsdag ${t.date}${t.live ? " (pågår)" : ""} · senast ${hhmm(l)}: ${fmt(l.price, 2)} ${u} (${sgn(l.price - t.base_price, 2)} ${u}, ${pct((l.price / t.base_price - 1) * 100)} mot föregående stängning) · du äger inte aktien, så diagrammet visar kursen`;
         if (t.error) txt += " · " + t.error;
         nt.textContent = txt; return;
       }
-      txt = `Handelsdag ${t.date}${t.live ? " (pågår)" : ""} · ${({"1m": "1 minuts", "5m": "5 minuters"})[t.interval] || "15 minuters"} upplösning · senast ${hhmm(l)}: ${fmt(l.value)} ${home} ` +
+      txt = `Handelsdag ${t.date}${t.live ? " (pågår)" : ""} · ${({"1m": "1 minuts", "5m": "5 minuters"})[t.interval] || "15 minuters"} upplösning · senast ${hhmm(l)}: kurs ${fmt(l.price, 2)} ${state.config.price_ccy} (${pct((l.price / t.base_price - 1) * 100)}) · värde ${fmt(l.value)} ${home} ` +
             `(${sgn(l.value - t.base_value)} ${home} mot föregående stängning)` +
             (state.config.price_ccy !== home ? " · valutan är fast på senaste ECB-kurs" : "");
       if (t.error) txt += " · " + t.error;
     }
     nt.textContent = txt;
   } else {
-    lg.innerHTML = watching() ? `<span><i></i>Kurs</span><span><i class="ref"></i>Start av perioden</span>`
-      : `<span><i></i>Värde</span><span><i class="ref"></i>Anskaffningsvärde (kvarvarande)</span>`;
-    if (watching()) { nt.textContent = "Du äger inte aktien än, så diagrammet visar kursen i " + state.config.price_ccy + "."; return; }
-    nt.textContent = state.config.kind === "fund" ? "Ett värde per dag (fondens NAV). Historiken hämtas från första köpet." : "Ett värde per handelsdag (stängningskurs). Historiken hämtas från första köpet och uppdateras en gång per dag.";
+    const ser = holdingSeries(), f = ser[0], l = ser[ser.length - 1], pc = state.config.price_ccy, home = state.config.home_ccy;
+    const pp = f && l && f.price > 0 ? pct((l.price / f.price - 1) * 100) : "–";
+    if (watching()) {
+      lg.innerHTML = `<span><i></i>Kurs</span><span><i class="ref"></i>Start av perioden</span><span class="sub">Höger skala: % mot periodens start</span>`;
+      nt.textContent = f && l ? `Du äger inte aktien än, så diagrammet visar kursen i ${pc}. Senast ${fmt(l.price, 2)} ${pc} (${pp} sedan ${f.d}).` : "";
+      return;
+    }
+    lg.innerHTML = `<span><i></i>Värde (${esc(home)}, vänster skala)</span><span><i class="ref"></i>Anskaffningsvärde (kvarvarande)</span>` +
+      `<span><i style="border-top-color:#d9822b"></i>Kurs per aktie (${esc(pc)}, höger skala)</span>`;
+    const vv = f && l && f.value > 0 ? ` · värde ${pct((l.value / f.value - 1) * 100)}` : "";
+    nt.textContent = (state.config.kind === "fund" ? "Ett värde per dag (fondens NAV)." : "Ett värde per handelsdag (stängningskurs).") +
+      (f && l ? ` Senast ${fmt(l.price, 2)} ${pc}: ${pp} sedan ${f.d}${vv}. Valutan och antalet andelar/aktier ändras över tid, därför skiljer sig kurs- och värdelinjen åt.` : "");
   }
+}
+
+function rightScale(ser) {
+  const t = state.intraday, pc = state.config.price_ccy;
+  if (range === -1) {
+    if (!(t && t.base_price > 0)) return null;
+    if (watching()) return {factor: 1, ccy: "%", base: t.base_price, baseLabel: "föreg. stängning", pctOnly: true};
+    if (t.base_value > 0) return {factor: t.base_price / t.base_value, ccy: pc + " · %", base: t.base_price, baseLabel: "föreg. stängning"};
+    return null;
+  }
+  if (!ser.length || !(ser[0].price > 0)) return null;
+  if (watching()) return {factor: 1, ccy: "%", base: ser[0].price, baseLabel: "periodens start", pctOnly: true};
+  return {own: true, ccy: pc + " · %", base: ser[0].price, baseLabel: "periodens start"};
 }
 
 function drawHoldingChart() {
   updateChartMeta();
-  const intra = range === -1, home = state.config.home_ccy;
-  drawChart($("chart"), holdingSeries(), {
+  const intra = range === -1, home = state.config.home_ccy, ser = holdingSeries();
+  drawChart($("chart"), ser, {
     home: watching() ? state.config.price_ccy : home, pccy: state.config.price_ccy, showPrice: !watching(),
-    right: intra && !watching() && state.intraday && state.intraday.base_value > 0 && state.intraday.base_price > 0
-      ? {factor: state.intraday.base_price / state.intraday.base_value, ccy: state.config.price_ccy + " · %", base: state.intraday.base_price}
-      : intra && watching() && state.intraday && state.intraday.base_price > 0
-        ? {factor: 1, ccy: "%", base: state.intraday.base_price, pctOnly: true} : null,
+    right: rightScale(ser),
     refText: intra && state.intraday && state.intraday.base_price
       ? `Föregående stängning ${fmt(state.intraday.base_price, 2)} ${state.config.price_ccy}` + (watching() ? "" : ` (${fmt(state.intraday.base_value)} ${home})`) : "",
     refLabel: intra ? "Föreg. stängning" : watching() ? "Periodens start" : "Anskaffning", gainLabel: intra ? "Mot föreg. stängning" : "Utveckling",
@@ -670,6 +689,17 @@ function drawChart(box, h, o) {
     const f = o.right.factor, span = (hi - lo) * f, dec = span < 12 ? 2 : span < 120 ? 1 : 0;
     rticks = niceTicks(lo * f, hi * f, 5).map(t => ({t, y: y(t / f), dec, pc: o.right.base ? (t / o.right.base - 1) * 100 : null}));
   }
+  /* daglägen: kursen per aktie som egen linje mot högerskalan (värdet påverkas av antal aktier och valuta) */
+  let ry = null, rpath = "";
+  if (o.right && o.right.own) {
+    const ps = h.map(p => p.price);
+    let rlo = Math.min(...ps), rhi = Math.max(...ps);
+    const pad = (rhi - rlo) * 0.08 || rhi * 0.05 || 1; rlo -= pad; rhi += pad;
+    ry = v => m.t + ih - ((v - rlo) / (rhi - rlo)) * ih;
+    const span = rhi - rlo, dec = span < 12 ? 2 : span < 120 ? 1 : 0;
+    rticks = niceTicks(rlo, rhi, 5).map(t => ({t, y: ry(t), dec, pc: o.right.base ? (t / o.right.base - 1) * 100 : null}));
+    rpath = h.map((p, i) => (i ? "L" : "M") + x(i).toFixed(1) + "," + ry(p.price).toFixed(1)).join("");
+  }
   const refY = y(h[0].invested);
   box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.aria)}">
     <g class="axis">
@@ -680,12 +710,14 @@ function drawChart(box, h, o) {
       ${xi.map(i => `<text x="${x(i)}" y="${H - 8}" text-anchor="${i === 0 ? "start" : i === h.length - 1 ? "end" : "middle"}">${h[i].d}</text>`).join("")}
     </g>
     <path d="${path("invested")}" fill="none" stroke="var(--ref)" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round"/>
+    ${rpath ? `<path d="${rpath}" fill="none" stroke="#d9822b" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>` : ""}
     <path d="${path("value")}" fill="none" stroke="var(--series1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
     ${o.refText ? `<text x="${m.l + 6}" y="${refY - 6}" font-size="11" fill="var(--ink2)">${esc(o.refText)}</text>` : ""}
     <circle cx="${x(h.length - 1)}" cy="${y(last.value)}" r="4" fill="var(--series1)" stroke="var(--surface)" stroke-width="2"/>
     <g class="cross" style="display:none"><line class="cl" y1="${m.t}" y2="${m.t + ih}" stroke="var(--ink3)" stroke-width="1"/>
       <circle class="c1" r="4.5" fill="var(--series1)" stroke="var(--surface)" stroke-width="2"/>
-      <circle class="c2" r="4.5" fill="var(--ref)" stroke="var(--surface)" stroke-width="2"/></g>
+      <circle class="c2" r="4.5" fill="var(--ref)" stroke="var(--surface)" stroke-width="2"/>
+      ${ry ? `<circle class="c3" r="4" fill="#d9822b" stroke="var(--surface)" stroke-width="2"/>` : ""}</g>
     <rect class="hit" x="${m.l}" y="${m.t}" width="${iw}" height="${ih}" fill="transparent"/>
   </svg><div class="tip"></div>`;
 
@@ -699,8 +731,10 @@ function drawChart(box, h, o) {
     q(".cl").setAttribute("x1", x(i)); q(".cl").setAttribute("x2", x(i));
     q(".c1").setAttribute("cx", x(i)); q(".c1").setAttribute("cy", y(p.value));
     q(".c2").setAttribute("cx", x(i)); q(".c2").setAttribute("cy", y(p.invested));
+    if (ry) { q(".c3").setAttribute("cx", x(i)); q(".c3").setAttribute("cy", ry(p.price)); }
     tip.innerHTML = `<b>${esc(p.d)}</b><br>Värde: ${fmt(p.value)} ${esc(o.home)}<br>${esc(o.refLabel)}: ${fmt(p.invested)}` +
       (o.showPrice && p.price != null ? `<br>Kurs: ${fmt(p.price, 2)} ${esc(o.pccy)}` : "") +
+      (o.right && o.right.base && p.price != null ? `<br>Kurs mot ${esc(o.right.baseLabel)}: ${pct((p.price / o.right.base - 1) * 100)}` : "") +
       `<br>${esc(o.gainLabel)}: ${sgn(p.value - p.invested)}`;
     tip.style.display = "block";
     const left = x(i) / sx, tw = tip.offsetWidth;

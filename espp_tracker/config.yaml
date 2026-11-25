@@ -1,6 +1,6 @@
 name: "Portföljtracker"
 description: "Följ dina aktier (Hitachi ESPP, Stockholmsbörsen m.fl.) i SEK: en sida per aktie, portföljöversikt och sensorer till Home Assistant"
-version: "2.7.2"
+version: "2.8.0"
 slug: "espp_tracker"
 init: false
 arch:

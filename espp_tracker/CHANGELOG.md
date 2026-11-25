@@ -4,6 +4,12 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [2.8.0] - 2026-11-25
+
+### Tillagt
+- Skalan till höger (kurs per aktie och % mot periodens start) finns nu för alla perioder: 1 mån, 3 mån, 6 mån och Allt. Kursen ritas som en egen orange linje mot högerskalan, vid sidan av värdet i kronor på vänsterskalan.
+- Etiketterna ovanför diagrammet visar nu kurs och procent, och hovertexten visar kursens procentuella förändring.
+
 ## [2.7.2] - 2026-11-25
 
 ### Tillagt

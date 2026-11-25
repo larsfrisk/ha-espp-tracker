@@ -4,6 +4,14 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [2.7.2] - 2026-11-25
+
+### Tillagt
+- Skalan till höger i dagsdiagrammet visar nu även procent mot föregående stängning (grön över, röd under), bredvid kursen per aktie. För bevakade aktier utan innehav visas bara procent.
+
+### Rättat
+- Skalan till vänster visar decimaler när intervallet är litet, så att man inte får samma tal flera gånger (t.ex. 124, 124).
+
 ## [2.7.1] - 2026-11-25
 
 ### Tillagt

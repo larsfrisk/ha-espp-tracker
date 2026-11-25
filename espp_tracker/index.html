@@ -633,7 +633,9 @@ function drawHoldingChart() {
   drawChart($("chart"), holdingSeries(), {
     home: watching() ? state.config.price_ccy : home, pccy: state.config.price_ccy, showPrice: !watching(),
     right: intra && !watching() && state.intraday && state.intraday.base_value > 0 && state.intraday.base_price > 0
-      ? {factor: state.intraday.base_price / state.intraday.base_value, ccy: state.config.price_ccy + " / aktie"} : null,
+      ? {factor: state.intraday.base_price / state.intraday.base_value, ccy: state.config.price_ccy + " · %", base: state.intraday.base_price}
+      : intra && watching() && state.intraday && state.intraday.base_price > 0
+        ? {factor: 1, ccy: "%", base: state.intraday.base_price, pctOnly: true} : null,
     refText: intra && state.intraday && state.intraday.base_price
       ? `Föregående stängning ${fmt(state.intraday.base_price, 2)} ${state.config.price_ccy}` + (watching() ? "" : ` (${fmt(state.intraday.base_value)} ${home})`) : "",
     refLabel: intra ? "Föreg. stängning" : watching() ? "Periodens start" : "Anskaffning", gainLabel: intra ? "Mot föreg. stängning" : "Utveckling",
@@ -652,28 +654,28 @@ function niceTicks(lo, hi, n) {
 
 function drawChart(box, h, o) {
   if (h.length < 2) { box.innerHTML = `<div class="empty">${esc(o.empty)}</div>`; return; }
-  const W = 900, H = 320, m = {l: 62, r: o.right ? 66 : 14, t: 12, b: 28};
+  const W = 900, H = 320, m = {l: 62, r: o.right ? (o.right.pctOnly ? 70 : 128) : 14, t: 12, b: 28};
   const iw = W - m.l - m.r, ih = H - m.t - m.b;
   const vals = h.flatMap(p => [p.value, p.invested]);
   let lo = Math.min(...vals), hi = Math.max(...vals);
   const padv = (hi - lo) * 0.08 || hi * 0.05 || 1; lo = Math.max(0, lo - padv); hi += padv;
   const x = i => m.l + (i / (h.length - 1)) * iw, y = v => m.t + ih - ((v - lo) / (hi - lo)) * ih;
   const path = key => h.map((p, i) => (i ? "L" : "M") + x(i).toFixed(1) + "," + y(p[key]).toFixed(1)).join("");
-  const ticks = niceTicks(lo, hi, 5);
+  const ticks = niceTicks(lo, hi, 5), lspan = hi - lo, ldec = lspan < 3 ? 2 : lspan < 30 ? 1 : 0;
   const nx = Math.min(6, h.length), xi = Array.from({length: nx}, (_, k) => Math.round(k * (h.length - 1) / (nx - 1 || 1)));
   const last = h[h.length - 1];
   /* höger skala: kurs per aktie. price = value * o.right.factor (exakt när valutakursen är fast, dvs i dagsvyn) */
   let rticks = [];
   if (o.right) {
     const f = o.right.factor, span = (hi - lo) * f, dec = span < 12 ? 2 : span < 120 ? 1 : 0;
-    rticks = niceTicks(lo * f, hi * f, 5).map(t => ({t, y: y(t / f), dec}));
+    rticks = niceTicks(lo * f, hi * f, 5).map(t => ({t, y: y(t / f), dec, pc: o.right.base ? (t / o.right.base - 1) * 100 : null}));
   }
   const refY = y(h[0].invested);
   box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.aria)}">
     <g class="axis">
       ${ticks.map(t => `<line x1="${m.l}" x2="${W - m.r}" y1="${y(t)}" y2="${y(t)}" stroke="var(--grid)"/>
-        <text x="${m.l - 8}" y="${y(t) + 4}" text-anchor="end">${fmt(t)}</text>`).join("")}
-      ${rticks.map(r => `<text x="${W - m.r + 8}" y="${r.y + 4}" text-anchor="start">${fmt(r.t, r.dec)}</text>`).join("")}
+        <text x="${m.l - 8}" y="${y(t) + 4}" text-anchor="end">${fmt(t, ldec)}</text>`).join("")}
+      ${rticks.map(r => `<text x="${W - m.r + 8}" y="${r.y + 4}" text-anchor="start">${o.right.pctOnly ? "" : fmt(r.t, r.dec)}${r.pc == null ? "" : `<tspan dx="${o.right.pctOnly ? 0 : 8}" fill="${r.pc > 0.005 ? "var(--good)" : r.pc < -0.005 ? "var(--bad)" : "var(--ink3)"}">${pct(r.pc)}</tspan>`}</text>`).join("")}
       ${o.right ? `<text x="${W - m.r + 8}" y="${m.t - 2}" text-anchor="start" font-size="10">${esc(o.right.ccy)}</text>` : ""}
       ${xi.map(i => `<text x="${x(i)}" y="${H - 8}" text-anchor="${i === 0 ? "start" : i === h.length - 1 ? "end" : "middle"}">${h[i].d}</text>`).join("")}
     </g>

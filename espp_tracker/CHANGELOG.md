@@ -4,6 +4,19 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [2.9.0] - 2026-11-25
+
+### Nytt
+- **Flera portföljer.** Skapa, byt namn på och ta bort portföljer (till exempel Pension) under nya vyn Inställningar. Varje portfölj har en egen översikt, och fliken Alla portföljer visar summan. Du väljer portfölj när du lägger till en aktie eller fond och kan flytta innehav mellan portföljer på innehavets sida. Befintliga innehav hamnar i portföljen Min portfölj. Med fler än en portfölj skickas värde, förändring idag och total vinst per portfölj som sensorer till Home Assistant.
+- **Tidsknappar på översikten.** Förändringen i kronor och procent (totalt, per innehav och under aktiens namn) följer nu vald period: Idag, 1 v, 1 mån, 3 mån, 6 mån, I år, 1 år eller Allt. Köp och försäljningar under perioden räknas bort, så att bara kursutvecklingen ger vinst eller förlust.
+- **Konfigureringsvy för tidsknappar.** Under Inställningar väljer du vilka tidsknappar som visas, både på översikten och på innehavssidorna.
+
+### Ändrat
+- På innehavets sida följer förändringen överst och i rutan Aktiekurs vald period (kronor och procent), inte bara senaste dagen. Värde, orealiserat och totalt räknas med dagens senaste kurs.
+- Diagrammens period börjar nu vid sista kursen på eller före startdatumet, så att förändringen i diagrammet är mot samma jämförelsepunkt som siffrorna.
+- Upplösningen i dagsdiagrammet har flyttats från översikten till Inställningar.
+- Översiktens diagram följer samma period som tidsknapparna (Idag visar de senaste 7 dagarna).
+
 ## [2.8.3] - 2026-11-25
 
 ### Rättat

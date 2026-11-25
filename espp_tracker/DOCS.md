@@ -19,12 +19,18 @@ Avanza och Skandia har inget öppet API, så fonder som Yahoo saknar läggs till
 **Lägg till fond manuellt**: du skriver själv in NAV (andelskurs) och datum på fondens sida.
 Köp och sälj läggs in som vanligt (antal andelar och belopp). Fonder har ingen vy Idag.
 
+## Portföljer
+Under **Inställningar** kan du skapa flera portföljer, till exempel Pension, med en egen översikt vardera. Välj portfölj när du lägger till en aktie eller fond. Du kan flytta ett innehav till en annan portfölj på innehavets sida. Fliken **Alla portföljer** visar summan. En portfölj måste vara tom för att kunna tas bort. Har du fler än en portfölj skickas även värde, förändring idag och total vinst per portfölj som sensorer.
+
+## Tidsperioder
+Översikten och varje innehav har tidsknappar (Idag, 1 v, 1 mån, 3 mån, 6 mån, I år, 1 år, Allt). Förändringen i kronor och procent följer vald period. Köp och försäljningar under perioden räknas bort, så att bara kursutvecklingen (och valutan) ger vinst eller förlust. Procenten är mot värdet i början av perioden plus det som köpts under perioden. Vilka knappar som visas väljer du under **Inställningar**.
+
 ## Kurser
 
 Historiken (stängningskurser från ditt första köp) hämtas en gång per dag kl 16:30, efter att Tokyo-börsen
 stängt och ECB publicerat dagens valutakurser. Vyn **Idag** på en aktie visar senaste handelsdag med
 15 minuters upplösning. Knappen "Hämta kurser nu" tvingar fram en hämtning.
-Tiden kan ändras med `update_time` i `/data/config.json`. Upplösningen i vyn Idag (1, 5 eller 15 minuter, standard 15) väljer du under **Inställningar** på Översikt-sidan. Observera att Yahoo ofta fördröjer svenska kurser ca 15 minuter.
+Tiden kan ändras med `update_time` i `/data/config.json`. Upplösningen i vyn Idag (1, 5 eller 15 minuter, standard 15) väljer du under **Inställningar** (länken uppe till höger). Observera att Yahoo ofta fördröjer svenska kurser ca 15 minuter.
 
 ## Sensorer i Home Assistant
 

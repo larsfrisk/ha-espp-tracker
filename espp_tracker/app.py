@@ -35,6 +35,7 @@ INGRESS_PEER = "172.30.32.2"                           # Supervisorns ingress-ga
 LOTS_FILE = os.path.join(DATA_DIR, "lots.json")
 CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
 HOLDINGS_FILE = os.path.join(DATA_DIR, "holdings.json")
+PORTFOLIOS_FILE = os.path.join(DATA_DIR, "portfolios.json")
 INDEX_FILE = os.path.join(BASE, "index.html")
 
 DEFAULT_CONFIG = {
@@ -44,9 +45,14 @@ DEFAULT_CONFIG = {
     "price_ccy": "JPY",
     "home_ccy": "SEK",       # valutan du vill se värdet i
     "intraday_interval": "15m",   # upplösning i dagsdiagrammet: 1m, 5m eller 15m
+    "ranges": ["1d", "1m", "3m", "6m", "all"],   # tidsknappar som visas (se PERIODS)
     "update_time": "16:30",   # daglig kurshämtning (lokal tid), efter Tokyo-stängning och ECB-kurser
     "publish_minutes": 15,    # hur ofta sensorer skickas till HA (använder sparade kurser, hämtar inget nytt)
 }
+
+# Tidsperioder för knapparna: dagar bakåt, "ytd" = sedan årsskiftet, 0 = allt, None = idag
+PERIODS = {"1d": ("Idag", None), "1w": ("1 v", 7), "1m": ("1 mån", 30), "3m": ("3 mån", 90), "6m": ("6 mån", 180),
+           "ytd": ("I år", "ytd"), "1y": ("1 år", 365), "all": ("Allt", 0)}
 
 DEMO = False
 LOCK = threading.Lock()
@@ -81,6 +87,10 @@ def save_setting(key, value):
     if key == "intraday_interval":
         if value not in INTERVALS:
             raise ValueError("Ogiltig upplösning (välj 1m, 5m eller 15m)")
+    elif key == "ranges":
+        if not isinstance(value, list) or not value or any(v not in PERIODS for v in value):
+            raise ValueError("Välj minst en tidsknapp")
+        value = [k for k in PERIODS if k in value]          # fast ordning
     else:
         raise ValueError("Okänd inställning")
     conf = _read_json(CONFIG_FILE, {})
@@ -108,6 +118,82 @@ def load_holdings():
 
 def save_holdings(hs):
     _write_json(HOLDINGS_FILE, hs)
+
+
+# ---------------------------------------------------------------- portföljer
+
+def load_portfolios():
+    pfs = _read_json(PORTFOLIOS_FILE, None)
+    return pfs if pfs else [{"id": "main", "name": "Min portfölj"}]
+
+
+def holding_pf(h, pfs=None):
+    """Portföljen ett innehav hör till (äldre innehav utan fält hör till 'main', okänd portfölj ger den första)."""
+    pfs = pfs or load_portfolios()
+    pid = h.get("portfolio") or "main"
+    return pid if any(p["id"] == pid for p in pfs) else pfs[0]["id"]
+
+
+def _pf_name(body):
+    name = str(body.get("name") or "").strip()[:40]
+    if not name:
+        raise ValueError("Portföljen behöver ett namn")
+    return name
+
+
+def add_portfolio(body):
+    name = _pf_name(body)
+    pfs = load_portfolios()
+    if any(p["name"].lower() == name.lower() for p in pfs):
+        raise ValueError("Det finns redan en portfölj som heter %s" % name)
+    base = _slug(name) or "portfolj"
+    pid, n = base, 2
+    while any(p["id"] == pid for p in pfs):
+        pid, n = "%s-%d" % (base, n), n + 1
+    pf = {"id": pid, "name": name}
+    pfs.append(pf)
+    _write_json(PORTFOLIOS_FILE, pfs)
+    return pf
+
+
+def rename_portfolio(pid, body):
+    name = _pf_name(body)
+    pfs = load_portfolios()
+    pf = next((p for p in pfs if p["id"] == pid), None)
+    if not pf:
+        raise KeyError(pid)
+    if any(p["name"].lower() == name.lower() and p["id"] != pid for p in pfs):
+        raise ValueError("Det finns redan en portfölj som heter %s" % name)
+    pf["name"] = name
+    _write_json(PORTFOLIOS_FILE, pfs)
+    return pf
+
+
+def delete_portfolio(pid):
+    pfs = load_portfolios()
+    if not any(p["id"] == pid for p in pfs):
+        raise KeyError(pid)
+    if len(pfs) < 2:
+        raise ValueError("Du måste ha minst en portfölj")
+    if any(holding_pf(h, pfs) == pid for h in load_holdings()):
+        raise ValueError("Portföljen innehåller aktier eller fonder. Flytta eller ta bort dem först.")
+    _write_json(PORTFOLIOS_FILE, [p for p in pfs if p["id"] != pid])
+
+
+def move_holding(hid, body):
+    pid = body.get("portfolio")
+    pfs = load_portfolios()
+    if not any(p["id"] == pid for p in pfs):
+        raise ValueError("Okänd portfölj")
+    hs = load_holdings()
+    h = next((x for x in hs if x["id"] == hid), None)
+    if not h:
+        raise KeyError(hid)
+    if any(x is not h and x["symbol"].upper() == h["symbol"].upper() and holding_pf(x, pfs) == pid for x in hs):
+        raise ValueError("%s finns redan i den portföljen" % h["symbol"])
+    h["portfolio"] = pid
+    save_holdings(hs)
+    return h
 
 
 def find_holding(hid):
@@ -266,8 +352,9 @@ def add_holding(body):
     if not re.fullmatch(r"[A-Z0-9][A-Z0-9.\-=^]{0,19}", sym):
         raise ValueError("Ogiltig symbol. Stockholmsbörsen slutar på .ST, till exempel VOLV-B.ST")
     hs = load_holdings()
-    if any(h["symbol"].upper() == sym for h in hs):
-        raise ValueError("Du har redan lagt till %s" % sym)
+    pid = _target_pf(body)
+    if any(h["symbol"].upper() == sym and holding_pf(h) == pid for h in hs):
+        raise ValueError("Du har redan lagt till %s i den portföljen" % sym)
     info = lookup_symbol(sym)
     home = load_config()["home_ccy"]
     if info["currency"] != home and not DEMO:
@@ -276,16 +363,24 @@ def add_holding(body):
         except Exception:
             raise ValueError("Valutan %s kan inte räknas om till %s (ECB-kurser saknas)" % (info["currency"], home))
     name = (str(body.get("name") or "").strip() or info["name"])[:60]
-    return _store_holding(hs, name, sym, info["currency"], info.get("kind", "stock"))
+    return _store_holding(hs, name, sym, info["currency"], info.get("kind", "stock"), portfolio=pid)
 
 
-def _store_holding(hs, name, symbol, ccy, kind, source=None):
+def _target_pf(body):
+    pfs = load_portfolios()
+    pid = body.get("portfolio") or pfs[0]["id"]
+    if not any(p["id"] == pid for p in pfs):
+        raise ValueError("Okänd portfölj")
+    return pid
+
+
+def _store_holding(hs, name, symbol, ccy, kind, source=None, portfolio=None):
     base = _slug(name)
     hid, n = base, 2
     while any(h["id"] == hid for h in hs):
         hid, n = "%s-%d" % (base, n), n + 1
     h = {"id": hid, "name": name, "symbol": symbol, "price_ccy": ccy, "kind": kind,
-         "sensor_prefix": "holding_" + hid.replace("-", "_")}
+         "sensor_prefix": "holding_" + hid.replace("-", "_"), "portfolio": portfolio or load_portfolios()[0]["id"]}
     if source:
         h["source"] = source
     hs.append(h)
@@ -302,10 +397,11 @@ def add_manual_fund(body):
     if isin and not ISIN_RE.fullmatch(isin):
         raise ValueError("Ogiltigt ISIN (12 tecken, t.ex. SE0000000000)")
     hs = load_holdings()
+    pid = _target_pf(body)
     sym = isin or "MANUELL-" + _slug(name).upper()
-    if any(h["symbol"].upper() == sym for h in hs):
-        raise ValueError("Du har redan lagt till %s" % sym)
-    return _store_holding(hs, name, sym, load_config()["home_ccy"], "fund", source="manual")
+    if any(h["symbol"].upper() == sym and holding_pf(h) == pid for h in hs):
+        raise ValueError("Du har redan lagt till %s i den portföljen" % sym)
+    return _store_holding(hs, name, sym, load_config()["home_ccy"], "fund", source="manual", portfolio=pid)
 
 
 def set_nav(h, body):
@@ -526,6 +622,48 @@ def _start(lots):
     return first - dt.timedelta(days=10)
 
 
+def period_cut(key, today=None):
+    """Datum (ISO) som perioden jämförs mot: sista handelsdagen på eller före detta. None = från början."""
+    today = today or dt.date.today()
+    days = PERIODS[key][1]
+    if days == "ytd":
+        return dt.date(today.year - 1, 12, 31).isoformat()
+    return (today - dt.timedelta(days=days)).isoformat() if days else None
+
+
+def period_stats(summ, prices):
+    """Förändring per tidsperiod. Köp och sälj under perioden räknas bort, så att bara kursutvecklingen
+    (och valutan) ger vinst eller förlust. Procenten är mot värdet i början plus det som köpts under perioden."""
+    if not summ or not prices:
+        return {}
+    hist, rows, value = summ["history"], summ["lots"], summ["value"]
+    pdates = sorted(prices)
+    p1 = prices[pdates[-1]]
+    out = {}
+    for key in PERIODS:
+        if key == "1d":
+            d = summ["day"]
+            prev = value - d["change"]
+            out[key] = {"change": d["change"], "base": prev, "pct": d["pct"], "price0": summ["prev_price"],
+                        "price_pct": d["price_pct"], "from": summ["prev"]}
+            continue
+        cut = period_cut(key)
+        v0 = 0.0
+        for e in hist:
+            if cut is not None and e["d"] <= cut:
+                v0 = e["value"]
+            else:
+                break
+        buys = sum(r["amount"] for r in rows if r["type"] == "buy" and (cut is None or r["date"] > cut))
+        sells = sum(r["amount"] for r in rows if r["type"] == "sell" and (cut is None or r["date"] > cut))
+        change, base = value - v0 - (buys - sells), v0 + buys
+        before = [d for d in pdates if cut is not None and d <= cut]
+        pd0 = before[-1] if before else pdates[0]
+        out[key] = {"change": change, "base": base, "pct": change / base * 100 if base > 1e-9 else None,
+                    "price0": prices[pd0], "price_pct": (p1 / prices[pd0] - 1) * 100 if prices[pd0] else None, "from": pd0}
+    return out
+
+
 def build_summary(h, refresh=False):
     cfg = holding_cfg(h)
     lots = lots_for(h["id"], load_lots())
@@ -539,7 +677,8 @@ def build_summary(h, refresh=False):
     return {
         "holding": h, "config": cfg, "meta": meta, "demo": DEMO, "error": err,
         "fetched_at": dt.datetime.fromtimestamp(fetched_at).isoformat(timespec="seconds"), "fetched_ts": fetched_at,
-        "summary": summ, "has_lots": bool(lots),
+        "summary": summ, "has_lots": bool(lots), "periods": period_stats(summ, prices),
+        "portfolio": holding_pf(h),
         "next_update": next_due(time.time(), cfg).isoformat(timespec="minutes"), "next_ts": next_due(time.time(), cfg).timestamp(),
         "price_history": [{"d": d, "price": prices[d]} for d in sorted(prices)[-800:]],
         "navs": [{"date": d, "price": p} for d, p in sorted(prices.items(), reverse=True)] if cfg["source"] == "manual" else None,
@@ -562,7 +701,8 @@ def _merge_histories(hists):
 
 
 def _apply_today(row, h, refresh):
-    """Byter dagskursens förändring mot förändringen hittills idag (intradagsdata mot föregående stängning)."""
+    """Byter dagskursens förändring mot förändringen hittills idag (intradagsdata mot föregående stängning).
+    Övriga perioder räknas om med den senaste kursen, så att alla siffror utgår från samma kurs."""
     if row["kind"] == "fund" or not row["has_prices"]:
         return
     try:
@@ -577,6 +717,8 @@ def _apply_today(row, h, refresh):
     row["price_pct"] = (last["price"] / t["base_price"] - 1) * 100
     row["today_date"] = t["date"]
     row["today_live"] = bool(t.get("live"))
+    per = row["periods"]
+    delta = 0.0
     if row["has_lots"] and t.get("base_value"):
         delta = last["value"] - row["value"]
         row["value"] += delta; row["gain"] += delta; row["total"] += delta
@@ -584,12 +726,35 @@ def _apply_today(row, h, refresh):
         row["day_change"] = last["value"] - t["base_value"]
         row["day_pct"] = row["day_change"] / t["base_value"] * 100
         row["price_effect"] = row["day_change"]; row["fx_effect"] = 0.0
+    for k, e in per.items():
+        if k == "1d":
+            e.update(change=row["day_change"], base=t["base_value"], pct=row["day_pct"], price0=t["base_price"],
+                     price_pct=row["price_pct"], **{"from": t.get("prev_date") or e.get("from")})
+            if not row["has_lots"]:
+                e.update(change=0.0, base=0.0, pct=None)
+            continue
+        if delta:
+            e["change"] += delta
+            e["pct"] = e["change"] / e["base"] * 100 if e["base"] > 1e-9 else None
+        if e.get("price0"):
+            e["price_pct"] = (last["price"] / e["price0"] - 1) * 100
 
 
-def build_portfolio(refresh=False, today=False):
+def build_portfolio(refresh=False, today=False, pf=None):
     cfg = load_config()
+    pfs = load_portfolios()
+    if pf in (None, "", "all"):
+        pf = "all"
+    elif pf == "first":
+        pf = pfs[0]["id"]
+    elif not any(p["id"] == pf for p in pfs):
+        raise KeyError(pf)
     rows, errors, hists, fetched, fetched_ts = [], [], [], [], []
+    counts = {p["id"]: 0 for p in pfs}
     for h in load_holdings():
+        counts[holding_pf(h, pfs)] += 1
+        if pf != "all" and holding_pf(h, pfs) != pf:
+            continue
         d = build_summary(h, refresh)
         s = d["summary"]
         fetched.append(d["fetched_at"]); fetched_ts.append(d["fetched_ts"])
@@ -597,6 +762,7 @@ def build_portfolio(refresh=False, today=False):
             errors.append("%s: %s" % (h["name"], d["error"]))
         row = {"id": h["id"], "name": h["name"], "symbol": h["symbol"], "price_ccy": h["price_ccy"],
                "kind": h.get("kind", "stock"), "sensor_prefix": h.get("sensor_prefix"), "has_lots": d["has_lots"], "has_prices": bool(s),
+               "portfolio": holding_pf(h, pfs), "periods": d["periods"],
                "shares": 0.0, "value": 0.0, "cost": 0.0, "gain": 0.0, "gain_pct": None, "realized": 0.0,
                "total": 0.0, "day_change": 0.0, "day_pct": None, "price_pct": None, "price": None,
                "fx": None, "as_of": None, "price_effect": 0.0, "fx_effect": 0.0}
@@ -618,12 +784,20 @@ def build_portfolio(refresh=False, today=False):
     for r in rows:
         r["weight"] = r["value"] / tv * 100 if tv else 0.0
     prev = tv - dc
+    periods = {}
+    for k in PERIODS:
+        ch = sum(r["periods"][k]["change"] for r in rows if r["periods"].get(k) and r["has_lots"])
+        base = sum(r["periods"][k]["base"] for r in rows if r["periods"].get(k) and r["has_lots"])
+        periods[k] = {"change": ch, "base": base, "pct": ch / base * 100 if base > 1e-9 else None}
+    cur = next((p for p in pfs if p["id"] == pf), {"id": "all", "name": "Alla portföljer"})
     return {
         "config": cfg, "demo": DEMO, "errors": errors, "holdings": rows, "history": _merge_histories(hists),
+        "pf": cur["id"], "pf_name": cur["name"],
+        "portfolios": [{"id": p["id"], "name": p["name"], "count": counts[p["id"]]} for p in pfs],
         "fetched_at": max(fetched) if fetched else None, "fetched_ts": max(fetched_ts) if fetched_ts else None,
         "next_update": next_due(time.time(), cfg).isoformat(timespec="minutes"), "next_ts": next_due(time.time(), cfg).timestamp(),
         "totals": {"value": tv, "cost": tc, "gain": gain, "gain_pct": gain / tc * 100 if tc else None,
-                   "realized": realized, "total": gain + realized,
+                   "realized": realized, "total": gain + realized, "periods": periods,
                    "day": {"change": dc, "pct": dc / prev * 100 if prev else None,
                            "price_effect": sum(r["price_effect"] for r in rows),
                            "fx_effect": sum(r["fx_effect"] for r in rows)}},
@@ -935,7 +1109,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, f.read(), "text/html; charset=utf-8")
         if path.path == "/api/portfolio":
             with LOCK:
-                return self._send(200, build_portfolio(refresh, today=True))
+                try:
+                    return self._send(200, build_portfolio(refresh, today=True, pf=(qs.get("pf") or [None])[0]))
+                except KeyError:
+                    return self._send(404, {"error": "Portföljen finns inte"})
         if path.path == "/api/search":
             q = (qs.get("q") or [""])[0]
             if len(q.strip()) < 2:
@@ -1004,7 +1181,33 @@ class Handler(BaseHTTPRequestHandler):
                         save_setting(k, v)
                 except ValueError as e:
                     return self._send(400, {"error": str(e)})
-            return self._send(200, {"intraday_interval": intraday_interval(load_config())})
+            cfg = load_config()
+            return self._send(200, {"intraday_interval": intraday_interval(cfg), "ranges": cfg["ranges"]})
+        if self.path == "/api/portfolios":
+            with LOCK:
+                try:
+                    pf = add_portfolio(body)
+                except ValueError as e:
+                    return self._send(400, {"error": str(e)})
+            return self._send(201, pf)
+        m = re.match(r"^/api/portfolios/([a-z0-9_-]+)/name$", self.path)
+        if m:
+            with LOCK:
+                try:
+                    return self._send(200, rename_portfolio(m.group(1), body))
+                except KeyError:
+                    return self._send(404, {"error": "Portföljen finns inte"})
+                except ValueError as e:
+                    return self._send(400, {"error": str(e)})
+        m = re.match(r"^/api/holdings/([a-z0-9_-]+)/portfolio$", self.path)
+        if m:
+            with LOCK:
+                try:
+                    return self._send(200, move_holding(m.group(1), body))
+                except KeyError:
+                    return self._send(404, {"error": "Innehavet finns inte"})
+                except ValueError as e:
+                    return self._send(400, {"error": str(e)})
         m = re.match(r"^/api/holdings/([a-z0-9_-]+)/name$", self.path)
         if m:
             name = str(body.get("name") or "").strip()[:60]
@@ -1046,6 +1249,16 @@ class Handler(BaseHTTPRequestHandler):
                     del_nav(h, m.group(2))
                 except ValueError as e:
                     return self._send(404, {"error": str(e)})
+            return self._send(200, {"ok": True})
+        m = re.match(r"^/api/portfolios/([a-z0-9_-]+)$", self.path)
+        if m:
+            with LOCK:
+                try:
+                    delete_portfolio(m.group(1))
+                except KeyError:
+                    return self._send(404, {"error": "Portföljen finns inte"})
+                except ValueError as e:
+                    return self._send(409, {"error": str(e)})
             return self._send(200, {"ok": True})
         m = re.match(r"^/api/holdings/([a-z0-9_-]+)$", self.path)
         if m:
@@ -1102,6 +1315,16 @@ def publish_to_ha():
         ("portfolio_cost", "Portfölj anskaffningsvärde", t["cost"], home, 0, "mdi:cash"),
     ]:
         _post_state(token, key, name, val, unit, nd, icon)
+    if len(p["portfolios"]) > 1:
+        for pf in p["portfolios"]:
+            q = build_portfolio(pf=pf["id"])["totals"]
+            k, n = "portfolio_" + pf["id"].replace("-", "_"), "Portfölj " + pf["name"]
+            for suffix, label, val, unit, nd, icon in [
+                ("value", "värde", q["value"], home, 0, "mdi:wallet"),
+                ("day_change", "förändring idag", q["day"]["change"], home, 0, "mdi:trending-up"),
+                ("total_gain", "total vinst", q["total"], home, 0, "mdi:cash-multiple"),
+            ]:
+                _post_state(token, "%s_%s" % (k, suffix), "%s %s" % (n, label), val, unit, nd, icon)
     for r in p["holdings"]:
         if not r["has_prices"] or not r["sensor_prefix"]:
             continue
@@ -1166,14 +1389,16 @@ def report():
 def _demo_setup():
     t = dt.date.today()
     day = lambda n: (t - dt.timedelta(days=n)).isoformat()
+    if not os.path.exists(PORTFOLIOS_FILE):
+        _write_json(PORTFOLIOS_FILE, [{"id": "main", "name": "Min portfölj"}, {"id": "pension", "name": "Pension"}])
     if not os.path.exists(HOLDINGS_FILE):
         save_holdings([
             {"id": "hitachi", "name": "Hitachi, Ltd.", "symbol": "6501.T", "price_ccy": "JPY", "sensor_prefix": "espp"},
             {"id": "volvo-ab-ser-b", "name": "Volvo AB ser. B", "symbol": "VOLV-B.ST", "price_ccy": "SEK", "sensor_prefix": "holding_volvo_ab_ser_b"},
             {"id": "investor-ab-ser-b", "name": "Investor AB ser. B", "symbol": "INVE-B.ST", "price_ccy": "SEK", "sensor_prefix": "holding_investor_ab_ser_b"},
-            {"id": "avanza-zero", "name": "Avanza Zero (demo)", "symbol": "0P00005U1J.ST", "price_ccy": "SEK", "kind": "fund", "sensor_prefix": "holding_avanza_zero"},
+            {"id": "avanza-zero", "name": "Avanza Zero (demo)", "symbol": "0P00005U1J.ST", "price_ccy": "SEK", "kind": "fund", "sensor_prefix": "holding_avanza_zero", "portfolio": "pension"},
             {"id": "skandia-sverige-exponering", "name": "Skandia Sverige Exponering", "symbol": "MANUELL-SKANDIA-SVERIGE-EXPONERING",
-             "price_ccy": "SEK", "kind": "fund", "source": "manual", "sensor_prefix": "holding_skandia_sverige_exponering"},
+             "price_ccy": "SEK", "kind": "fund", "source": "manual", "sensor_prefix": "holding_skandia_sverige_exponering", "portfolio": "pension"},
         ])
         _write_json(nav_path("skandia-sverige-exponering"), {day(100): 340.0, day(70): 352.5, day(40): 347.2, day(10): 361.8})
     if not os.path.exists(LOTS_FILE):
@@ -1191,7 +1416,7 @@ def _demo_setup():
 
 
 def main():
-    global DEMO, LOTS_FILE, HOLDINGS_FILE
+    global DEMO, LOTS_FILE, HOLDINGS_FILE, PORTFOLIOS_FILE, CONFIG_FILE
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default="127.0.0.1", help="standard 127.0.0.1 (endast denna dator)")
     ap.add_argument("--port", type=int, default=8765)
@@ -1203,6 +1428,8 @@ def main():
         DEMO = True
         LOTS_FILE = os.path.join(DATA_DIR, "demo_lots.json")
         HOLDINGS_FILE = os.path.join(DATA_DIR, "demo_holdings.json")
+        PORTFOLIOS_FILE = os.path.join(DATA_DIR, "demo_portfolios.json")
+        CONFIG_FILE = os.path.join(DATA_DIR, "demo_config.json")
         _demo_setup()
 
     if args.report:

@@ -87,6 +87,12 @@
   .banner.err { border-color: var(--bad); }
   .empty { color: var(--ink2); padding: 28px 0; text-align: center; }
   details summary { cursor: pointer; color: var(--ink2); font-size: 13px; margin-top: 8px; }
+  label.chk { flex-direction: row; align-items: center; gap: 6px; font-size: 14px; color: var(--ink); }
+  label.chk input { width: auto; }
+  .pfrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+  .pfrow input { flex: 1 1 200px; min-width: 0; }
+  #pfnav { margin-top: 8px; }
+  #pfnav a[href="#/settings"] { margin-left: auto; }
   .results th, .results td { text-align: left; }
   .results th:last-child, .results td:last-child { text-align: right; }
 </style>
@@ -100,39 +106,25 @@
     </div>
     <div><button class="btn" id="refresh">↻ Hämta kurser nu</button></div>
   </header>
+  <nav class="nav" id="pfnav" aria-label="Portföljer"></nav>
   <nav class="nav" id="nav" aria-label="Innehav"></nav>
   <div id="banner"></div>
 
   <!-- ===================== ÖVERSIKT ===================== -->
   <div class="view" id="view-overview" hidden>
-    <section class="card" id="otop"></section>
+    <div class="bar" style="margin-top:16px"><div class="sub" id="operlabel"></div><div class="seg" id="operiods" role="group" aria-label="Tidsperiod"></div></div>
+    <section class="card" id="otop" style="margin-top:0"></section>
     <section class="kpis" id="okpis"></section>
     <section class="card">
       <div class="bar"><h2>Innehav</h2><a class="btn" href="#/add">+ Lägg till aktie/fond</a></div>
       <div class="tablewrap" id="otable"></div>
     </section>
-    <section class="card">
-      <div class="bar">
-        <h2>Inställningar</h2>
-      </div>
-      <div class="bar">
-        <div>Upplösning i dagsdiagrammet (Idag)<div class="sub">Vid 1 minut hämtas och uppdateras kursen varje minut under börsens öppettider. Yahoo fördröjer ofta svenska kurser ca 15 min.</div></div>
-        <div class="seg" id="ivseg" role="group" aria-label="Upplösning dagsdiagram">
-          <button data-iv="1m">1 min</button><button data-iv="5m">5 min</button><button data-iv="15m">15 min</button>
-        </div>
-      </div>
-      <div class="banner err" id="iverr" hidden></div>
-    </section>
     <section class="card" id="ochartcard">
       <div class="bar">
         <h2>Portföljens värde över tid</h2>
-        <div class="seg" id="oranges" role="group" aria-label="Tidsintervall">
-          <button data-r="30">1 mån</button><button data-r="90">3 mån</button>
-          <button data-r="180">6 mån</button><button data-r="0" aria-pressed="true">Allt</button>
-        </div>
       </div>
       <div class="legend"><span><i></i>Värde</span><span><i class="ref"></i>Anskaffningsvärde (kvarvarande aktier)</span></div>
-      <div class="sub">Summan av alla innehav, ett värde per dag (stängningskurser).</div>
+      <div class="sub" id="ochartnote">Summan av alla innehav, ett värde per dag (stängningskurser).</div>
       <div class="chart" id="ochart"></div>
       <details><summary>Visa som tabell</summary><div class="tablewrap" id="ohisttable"></div></details>
     </section>
@@ -140,7 +132,7 @@
 
   <!-- ===================== ETT INNEHAV ===================== -->
   <div class="view" id="view-holding" hidden>
-    <h2 class="name"><span id="hname"></span> <button class="btn" id="renamebtn" title="Byt namn" aria-label="Byt namn">✎ Byt namn</button></h2>
+    <h2 class="name"><span id="hname"></span> <button class="btn" id="renamebtn" title="Byt namn" aria-label="Byt namn">✎ Byt namn</button> <select id="pfmove" title="Flytta till en annan portfölj" aria-label="Portfölj" hidden></select></h2>
     <div class="sub" id="hsub"></div>
     <section class="card" id="top"><div class="empty">Laddar…</div></section>
     <section class="kpis" id="kpis"></section>
@@ -148,10 +140,7 @@
     <section class="card">
       <div class="bar">
         <h2>Värde över tid</h2>
-        <div class="seg" id="ranges" role="group" aria-label="Tidsintervall">
-          <button data-r="-1" aria-pressed="true">Idag</button><button data-r="30">1 mån</button><button data-r="90">3 mån</button>
-          <button data-r="180">6 mån</button><button data-r="0">Allt</button>
-        </div>
+        <div class="seg" id="ranges" role="group" aria-label="Tidsintervall"></div>
       </div>
       <div class="legend" id="legend"></div>
       <div class="sub" id="chartnote"></div>
@@ -208,8 +197,43 @@
     <p><button class="btn danger" id="delholding">Ta bort aktien från portföljen…</button></p>
   </div>
 
+  <!-- ===================== INSTÄLLNINGAR ===================== -->
+  <div class="view" id="view-settings" hidden>
+    <section class="card">
+      <div class="bar"><h2>Portföljer</h2></div>
+      <div id="pflist"></div>
+      <form id="newpfform" style="margin-top:12px">
+        <label>Ny portfölj<input name="name" maxlength="40" placeholder="t.ex. Pension" required></label>
+        <button class="btn primary" type="submit">Skapa portfölj</button>
+      </form>
+      <div class="banner err" id="pferr" hidden></div>
+      <div class="hint">Varje portfölj får en egen översikt. Du väljer portfölj när du lägger till en aktie eller fond, och kan flytta den på innehavets sida. "Alla portföljer" visar summan. En portfölj måste vara tom för att tas bort.</div>
+    </section>
+    <section class="card">
+      <div class="bar"><h2>Tidsknappar</h2></div>
+      <div class="sub">Välj vilka tidsperioder som visas som knappar på översikten och på varje innehav. Förändringssiffrorna följer vald period.</div>
+      <div id="rangeopts" style="display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:12px"></div>
+      <div class="banner err" id="rangeerr" hidden></div>
+    </section>
+    <section class="card">
+      <div class="bar">
+        <h2>Inställningar</h2>
+      </div>
+      <div class="bar">
+        <div>Upplösning i dagsdiagrammet (Idag)<div class="sub">Vid 1 minut hämtas och uppdateras kursen varje minut under börsens öppettider. Yahoo fördröjer ofta svenska kurser ca 15 min.</div></div>
+        <div class="seg" id="ivseg" role="group" aria-label="Upplösning dagsdiagram">
+          <button data-iv="1m">1 min</button><button data-iv="5m">5 min</button><button data-iv="15m">15 min</button>
+        </div>
+      </div>
+      <div class="banner err" id="iverr" hidden></div>
+    </section>
+  </div>
+
   <!-- ===================== LÄGG TILL AKTIE ===================== -->
   <div class="view" id="view-add" hidden>
+    <section class="card">
+      <label>Lägg till i portfölj<select id="addpf"></select></label>
+    </section>
     <section class="card">
       <div class="bar"><h2>Lägg till aktie eller fond</h2></div>
       <form id="searchform">
@@ -244,18 +268,38 @@
 "use strict";
 const fmt = (n, d = 0) => n == null ? "–" : new Intl.NumberFormat("sv-SE", {minimumFractionDigits: d, maximumFractionDigits: d}).format(n);
 const sgn = (n, d = 0) => n == null ? "–" : (n > 0 ? "+" : n < 0 ? "−" : "") + fmt(Math.abs(n), d);
-/* rutan Aktiekurs: senaste kurs och förändring i kronor och procent mot föregående stängning.
-   Använder dagens intradagsdata när den finns (samma bas som diagrammet), annars senaste dagskursen. */
-function priceKpi(s, d, pc, fund) {
-  const t = state.intraday, pts = t && t.points || [];
-  if (!fund && pts.length && t.base_price > 0) {
-    const l = pts[pts.length - 1], ch = l.price - t.base_price, pp = (l.price / t.base_price - 1) * 100;
-    return ["Aktiekurs", `${fmt(l.price, 2)} ${pc}`,
-      `<span class="${cls(ch)}">${sgn(ch, 2)} ${pc} (${pct(pp)})</span> ${dayLabel(t.date)}${t.live ? "" : " (stängd)"} · kl ${hhmm(l)}`];
+/* Förändring för vald period på ett innehav. Dagsperioden och dagens kurs använder intradagsdata när den finns
+   (samma bas som diagrammet); övriga perioder justeras med dagens rörelse så att alla siffror utgår från samma kurs. */
+function holdingPeriod() {
+  const s = state.summary, e = state.periods && state.periods[hKey];
+  if (!s || !e) return null;
+  const t = state.intraday, pts = (t && t.points) || [], fund = state.config.kind === "fund";
+  const r = {change: e.change, base: e.base, pct: e.pct, price0: e.price0, price: s.price, from: e.from, intra: false, value: s.value};
+  if (!fund && pts.length && t.base_price > 0 && t.date >= s.as_of) {
+    const l = pts[pts.length - 1];
+    r.price = l.price; r.intra = true; r.time = hhmm(l); r.live = t.live; r.date = t.date;
+    if (state.has_lots) r.value = l.value;
+    if (hKey === "1d") {
+      r.price0 = t.base_price; r.from = null;
+      if (state.has_lots && t.base_value) { r.base = t.base_value; r.change = l.value - t.base_value; r.pct = r.change / r.base * 100; }
+    } else if (state.has_lots) {
+      r.change += l.value - s.value;
+      r.pct = r.base > 1e-9 ? r.change / r.base * 100 : null;
+    }
   }
-  const ch = s.price - s.prev_price;
-  return [fund ? "NAV" : "Aktiekurs", `${fmt(s.price, 2)} ${pc}`,
-    `<span class="${cls(ch)}">${sgn(ch, 2)} ${pc} (${pct(d.price_pct)})</span> ${dayLabel(s.as_of)}`];
+  r.price_change = r.price - r.price0;
+  r.price_pct = r.price0 ? (r.price / r.price0 - 1) * 100 : null;
+  return r;
+}
+const periodLabel = fund => fund && hKey === "1d" ? "senaste NAV" : PERIODS[hKey][1];
+
+/* rutan Aktiekurs: senaste kurs och förändring i kronor och procent för vald period */
+function priceKpi(pp, pc, fund) {
+  const lab = hKey === "1d"
+    ? (pp.intra ? `${dayLabel(pp.date)}${pp.live ? "" : " (stängd)"} · kl ${pp.time}` : dayLabel(state.summary.as_of))
+    : `${PERIODS[hKey][1]}${pp.from ? ` (sedan ${pp.from})` : ""}`;
+  return [fund ? "NAV" : "Aktiekurs", `${fmt(pp.price, 2)} ${pc}`,
+    `<span class="${cls(pp.price_change)}">${sgn(pp.price_change, 2)} ${pc} (${pct(pp.price_pct)})</span> ${lab}`];
 }
 
 /* klockslag i webbläsarens tidszon (servern kan stå på UTC) */
@@ -269,8 +313,35 @@ const $ = (id) => document.getElementById(id);
 
 let portfolio = null;      // /api/portfolio
 let state = null;          // aktuellt innehav (/api/holdings/<id>/summary)
-let range = -1;            // innehav: -1 = Idag (15 min), 0 = Allt, annars dagar
-let oRange = 0;            // översikt
+/* tidsperioder: nyckel -> [knapptext, beskrivning]. Samma nycklar som servern (PERIODS i app.py) */
+const PERIODS = {"1d": ["Idag", "idag"], "1w": ["1 v", "senaste 7 dagarna"], "1m": ["1 mån", "senaste 30 dagarna"],
+                 "3m": ["3 mån", "senaste 90 dagarna"], "6m": ["6 mån", "senaste 180 dagarna"], "ytd": ["I år", "sedan årsskiftet"],
+                 "1y": ["1 år", "senaste året"], "all": ["Allt", "sedan start"]};
+function periodDays(k) {   // -1 = idag (intradag), 0 = allt, annars dagar bakåt
+  if (k === "1d") return -1;
+  if (k === "ytd") return Math.ceil((Date.now() - new Date(new Date().getFullYear() - 1, 11, 31)) / 864e5);
+  return ({"1w": 7, "1m": 30, "3m": 90, "6m": 180, "1y": 365})[k] || 0;
+}
+const lsGet = k => { try { return localStorage.getItem("pt_" + k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem("pt_" + k, v); } catch (e) { /* ingen lagring */ } };
+const enabledPeriods = () => (portfolio && portfolio.config.ranges && portfolio.config.ranges.length ? portfolio.config.ranges : ["1d", "1m", "3m", "6m", "all"]);
+let hKey = PERIODS[lsGet("hkey")] ? lsGet("hkey") : "1d";   // vald period på ett innehav
+let oKey = PERIODS[lsGet("okey")] ? lsGet("okey") : "1d";   // vald period på översikten
+let range = periodDays(hKey);                               // innehav: -1 = Idag (intradag), 0 = Allt, annars dagar
+let curPf = lsGet("pf") || "";                              // vald portfölj (id eller "all")
+
+function periodButtons(el, cur, skip) {
+  el.innerHTML = enabledPeriods().filter(k => k !== skip).map(k =>
+    `<button data-k="${k}" aria-pressed="${k === cur}" title="${esc(PERIODS[k][1])}">${esc(PERIODS[k][0])}</button>`).join("");
+}
+function setHKey(k) {
+  hKey = k; range = periodDays(k); lsSet("hkey", k);
+  document.querySelectorAll("#ranges button").forEach(x => x.setAttribute("aria-pressed", x.dataset.k === k));
+}
+function setOKey(k) {
+  oKey = k; lsSet("okey", k);
+  document.querySelectorAll("#operiods button").forEach(x => x.setAttribute("aria-pressed", x.dataset.k === k));
+}
 
 async function api(path, opts) {
   const r = await fetch(path, opts);
@@ -282,23 +353,44 @@ async function api(path, opts) {
 const postJson = (path, body) => api(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
 
 function route() {
-  const m = location.hash.match(/^#\/h\/([\w-]+)/);
+  let m = location.hash.match(/^#\/h\/([\w-]+)/);
   if (m) return {v: "holding", id: m[1]};
+  m = location.hash.match(/^#\/p\/([\w-]+)/);
+  if (m) return {v: "overview", pf: m[1]};
   if (location.hash === "#/add") return {v: "add"};
+  if (location.hash === "#/settings") return {v: "settings"};
   return {v: "overview"};
 }
 
 async function show(refresh) {
   const rt = route();
   try {
-    if (!portfolio || refresh || rt.v === "overview") portfolio = await api("api/portfolio" + (refresh ? "?refresh=1" : ""));
+    /* översikten läser en portfölj; övriga sidor läser alla (för navigeringen) */
+    const want = rt.v === "overview" ? (rt.pf || curPf || "first") : "all";
+    if (!portfolio || refresh || rt.v === "overview" || portfolio.pf !== "all") {
+      const load = id => api("api/portfolio?pf=" + encodeURIComponent(id) + (refresh ? "&refresh=1" : ""));
+      try { portfolio = await load(want); }
+      catch (e) { if (rt.v !== "overview") throw e; portfolio = await load("first"); }
+    }
+    if (rt.v === "overview") curPf = portfolio.pf;
+    else if (rt.v === "holding") { const hh = portfolio.holdings.find(h => h.id === rt.id); if (hh) curPf = hh.portfolio; }
+    else if (!curPf || (curPf !== "all" && !portfolio.portfolios.some(p => p.id === curPf))) curPf = portfolio.portfolios[0].id;
+    lsSet("pf", curPf);
+    if (!enabledPeriods().includes(oKey)) setOKey(enabledPeriods()[0]);
     renderNav(rt);
     document.querySelectorAll(".view").forEach(v => v.hidden = v.id !== "view-" + rt.v);
     $("banner").innerHTML = "";
     if (portfolio.demo) banner("Demoläge: kurserna är påhittade och inget sparas på riktigt.", false);
-    if (rt.v === "overview") renderOverview();
+    if (rt.v === "overview") { portfolio.errors.forEach(e => banner(e, true)); renderOverview(); }
     else if (rt.v === "holding") await showHolding(rt.id, refresh);
-    else { $("asof").textContent = ""; $("q").focus(); }
+    else if (rt.v === "settings") { $("asof").textContent = ""; renderSettings(); }
+    else {
+      $("asof").textContent = "";
+      const pfs = portfolio.portfolios;
+      $("addpf").innerHTML = pfs.map(p => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("");
+      $("addpf").value = pfs.some(p => p.id === curPf) ? curPf : pfs[0].id;
+      $("q").focus();
+    }
   } catch (e) {
     banner(e.message, true);
   }
@@ -306,29 +398,34 @@ async function show(refresh) {
 function banner(text, err) { $("banner").insertAdjacentHTML("beforeend", `<div class="banner${err ? " err" : ""}">${esc(text)}</div>`); }
 
 function renderNav(rt) {
-  const cur = (ok) => ok ? ' aria-current="page"' : "";
-  $("nav").innerHTML = `<a href="#/"${cur(rt.v === "overview")}>Översikt</a>` +
-    portfolio.holdings.map(h => `<a href="#/h/${esc(h.id)}" title="${esc(h.name)} (${esc(h.symbol)})"${cur(rt.v === "holding" && rt.id === h.id)}>${esc(h.name)}</a>`).join("") +
+  const pfs = portfolio.portfolios, cur = ok => ok ? ' aria-current="page"' : "";
+  $("pfnav").innerHTML = (pfs.length > 1 ? `<a href="#/p/all"${cur(rt.v !== "settings" && curPf === "all")}>Alla portföljer</a>` : "") +
+    pfs.map(p => `<a href="#/p/${esc(p.id)}"${cur(rt.v !== "settings" && curPf === p.id)} title="${p.count} innehav">${esc(p.name)}</a>`).join("") +
+    `<a href="#/settings"${cur(rt.v === "settings")}>⚙ Inställningar</a>`;
+  $("nav").innerHTML = portfolio.holdings.filter(h => curPf === "all" || h.portfolio === curPf).map(h =>
+    `<a href="#/h/${esc(h.id)}" title="${esc(h.name)} (${esc(h.symbol)})"${cur(rt.v === "holding" && rt.id === h.id)}>${esc(h.name)}</a>`).join("") +
     `<a href="#/add"${cur(rt.v === "add")}>+ Lägg till aktie/fond</a>`;
 }
 
 /* ---------------------------------------------------------------- översikt */
 function renderOverview() {
-  const p = portfolio, t = p.totals, home = p.config.home_ccy, d = t.day;
-  p.errors.forEach(e => banner(e, true));
+  const p = portfolio, t = p.totals, home = p.config.home_ccy, k = oKey, pr = t.periods[k], lab = PERIODS[k][1];
+  periodButtons($("operiods"), k);
+  $("operlabel").textContent = p.pf === "all" ? "Alla portföljer" : p.pf_name;
   $("asof").textContent = p.fetched_at ? `Hämtad ${when(p.fetched_ts, p.fetched_at)} · nästa automatiska hämtning ${when(p.next_ts, p.next_update)}` : "";
   const any = p.holdings.some(h => h.has_lots);
   if (!p.holdings.length || !any) {
     $("otop").innerHTML = `<div class="empty">${p.holdings.length
       ? "Inga transaktioner registrerade än. Öppna en aktie och lägg in ditt första köp."
-      : `Din portfölj är tom. <a href="#/add">Lägg till din första aktie</a>.`}</div>`;
+      : `${p.pf === "all" ? "Du har inga innehav" : `Portföljen ${esc(p.pf_name)} är tom`}. <a href="#/add">Lägg till din första aktie eller fond</a>.`}</div>`;
     $("okpis").innerHTML = "";
   } else {
     $("otop").innerHTML = `
-      <div class="sub">Portföljens värde</div>
+      <div class="sub">${p.pf === "all" ? "Alla portföljers värde" : esc(p.pf_name) + ", värde"}</div>
       <div class="hero">${fmt(t.value)}<small>${home}</small></div>
-      <div class="delta ${cls(d.change)}">${arrow(d.change)} ${sgn(d.change)} ${home} (${pct(d.pct)}) senaste handelsdag</div>
-      <div class="split">varav kurser ${sgn(d.price_effect)} ${home} · valuta ${sgn(d.fx_effect)} ${home}</div>`;
+      <div class="delta ${cls(pr.change)}">${arrow(pr.change)} ${sgn(pr.change)} ${home} (${pct(pr.pct)}) ${lab}</div>
+      ${k === "1d" ? `<div class="split">varav kurser ${sgn(t.day.price_effect)} ${home} · valuta ${sgn(t.day.fx_effect)} ${home}</div>`
+        : `<div class="split">Köp och försäljningar under perioden räknas bort. Procenten är mot värdet i början plus det som köpts under perioden.</div>`}`;
     $("okpis").innerHTML = [
       ["Orealiserad vinst", `<span class="${cls(t.gain)}">${arrow(t.gain)} ${sgn(t.gain)} ${home}</span>`, pct(t.gain_pct) + " mot anskaffning"],
       ["Realiserad vinst (sålt)", `<span class="${cls(t.realized)}">${arrow(t.realized)} ${sgn(t.realized)} ${home}</span>`, "genomsnittsmetoden"],
@@ -337,19 +434,19 @@ function renderOverview() {
       ["Antal innehav", String(p.holdings.length), ""],
     ].map(([l, v, s]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
   }
+  const pfName = Object.fromEntries(p.portfolios.map(x => [x.id, x.name]));
   $("otable").innerHTML = p.holdings.length ? `<table><thead><tr><th>Aktie</th><th>Värde (${home})</th><th>Andel</th>
-      <th>Idag (${home})</th><th>Orealiserat (${home})</th><th title="Mekanisk teknisk signal, ingen rådgivning">Signal</th></tr></thead><tbody>` +
+      <th title="${esc(lab)}">${esc(PERIODS[k][0])} (${home})</th><th>Orealiserat (${home})</th><th title="Mekanisk teknisk signal, ingen rådgivning">Signal</th></tr></thead><tbody>` +
     p.holdings.map(h => {
-      const link = `<a href="#/h/${esc(h.id)}">${esc(h.name)}</a><div class="sub">${esc(h.symbol)}${h.price ? ` · ${fmt(h.price, 2)} ${esc(h.price_ccy)} (${pct(h.price_pct)})` : ""}</div>`;
+      const e = (h.periods && h.periods[k]) || {};
+      const link = `<a href="#/h/${esc(h.id)}">${esc(h.name)}</a><div class="sub">${esc(h.symbol)}${p.pf === "all" && p.portfolios.length > 1 ? ` · ${esc(pfName[h.portfolio] || "")}` : ""}${h.price ? ` · ${fmt(h.price, 2)} ${esc(h.price_ccy)} (${pct(e.price_pct)})` : ""}</div>`;
       if (!h.has_lots || !h.has_prices) return `<tr><td>${link}</td><td colspan="4" class="sub" style="text-align:right">${h.has_prices ? "Inga transaktioner än" : "Inga kurser tillgängliga"}</td>${sigCell(h)}</tr>`;
       return `<tr><td>${link}</td><td>${fmt(h.value)}</td>
         <td><span class="wbar"><i style="width:${Math.min(100, h.weight).toFixed(1)}%"></i></span>${fmt(h.weight, 1)} %</td>
-        <td class="${cls(h.day_change)}">${arrow(h.day_change)} ${sgn(h.day_change)}<div class="sub">${pct(h.day_pct)}</div></td>
+        <td class="${cls(e.change)}">${arrow(e.change)} ${sgn(e.change)}<div class="sub">${pct(e.pct)}</div></td>
         <td class="${cls(h.gain)}">${arrow(h.gain)} ${sgn(h.gain)}<div class="sub">${pct(h.gain_pct)}</div></td>${sigCell(h)}</tr>`;
     }).join("") + `</tbody></table><div class="sub" style="margin-top:8px">Signal = mekanisk teknisk signal (trend, momentum, RSI m.fl.), <b>inte personlig rådgivning</b> och ingen rekommendation. Klicka på aktien för detaljer och backtest.</div>` : "";
   loadOverviewSignals(p.holdings);
-  const iv = ["1m", "5m"].includes(p.config.intraday_interval) ? p.config.intraday_interval : "15m";
-  document.querySelectorAll("#ivseg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.iv === iv));
   $("ochartcard").hidden = !any;
   drawOverviewChart();
 }
@@ -374,12 +471,16 @@ async function loadOverviewSignals(holdings) {
 function filterRange(h, days) {
   if (!days || !h.length) return h;
   const cut = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
-  const f = h.filter(p => p.d >= cut);
+  const i = h.findIndex(p => p.d > cut);
+  if (i < 0) return h.slice(-2);
+  const f = h.slice(Math.max(0, i - 1));      // sista punkten på eller före startdatumet är jämförelsepunkt
   return f.length >= 2 ? f : h.slice(-2);
 }
 
 function drawOverviewChart() {
-  const h = filterRange(portfolio.history, oRange), home = portfolio.config.home_ccy;
+  const days = oKey === "1d" ? 7 : periodDays(oKey);
+  $("ochartnote").textContent = "Summan av alla innehav, ett värde per dag (stängningskurser)." + (oKey === "1d" ? " För Idag visas de senaste 7 dagarna." : "");
+  const h = filterRange(portfolio.history, days), home = portfolio.config.home_ccy;
   drawChart($("ochart"), h, {home, refLabel: "Anskaffning", gainLabel: "Utveckling", empty: "Grafen visas när det finns minst två dagars data.", aria: "Portföljens värde över tid"});
   $("ohisttable").innerHTML = h.length
     ? `<table><thead><tr><th>Datum</th><th>Värde (${home})</th><th>Anskaffning (${home})</th></tr></thead><tbody>` +
@@ -390,11 +491,9 @@ function drawOverviewChart() {
 async function showHolding(id, refresh) {
   state = await api("api/holdings/" + encodeURIComponent(id) + "/summary" + (refresh ? "?refresh=1" : ""));
   const isFund = state.config.kind === "fund";
-  document.querySelector('#ranges button[data-r="-1"]').hidden = isFund;
-  if (isFund && range === -1) {
-    range = 30;
-    document.querySelectorAll("#ranges button").forEach(x => x.setAttribute("aria-pressed", +x.dataset.r === range));
-  }
+  const en = enabledPeriods().filter(k => !(isFund && k === "1d"));
+  if (!en.includes(hKey)) setHKey(en[0] || "all");
+  periodButtons($("ranges"), hKey, isFund ? "1d" : null);
   if (!isFund && (range === -1 || refresh || !state.intraday)) await loadIntraday(refresh);  /* dagens förändring i rutan Aktiekurs behöver intradagsdata */
   renderHolding();
 }
@@ -419,7 +518,18 @@ function renderHolding() {
   $("delholding").textContent = `Ta bort ${fund ? "fonden" : "aktien"} från portföljen…`;
   if (error) banner(error, true);
 
-  const top = $("top"), kp = $("kpis");
+  renderHoldingTop();
+  const pfs = portfolio.portfolios, pm = $("pfmove");
+  pm.hidden = pfs.length < 2;
+  pm.innerHTML = pfs.map(x => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("");
+  pm.value = state.portfolio;
+  renderLots(); drawHoldingChart(); renderHistTable(); renderNavs(); renderDaySignals();
+  if (!state.sigLoaded) { state.sigLoaded = true; loadSignals(false); }
+}
+
+function renderHoldingTop() {
+  const {config: c, summary: s, fetched_at} = state, home = c.home_ccy, pc = c.price_ccy;
+  const fund = c.kind === "fund", manual = c.source === "manual", pp = holdingPeriod(), lab = periodLabel(fund), top = $("top"), kp = $("kpis");
   if (!s) {
     $("asof").textContent = "";
     top.innerHTML = `<div class="empty">${manual ? "Lägg in minst ett NAV (längre ner på sidan) för att se värdet." : "Inga kurser tillgängliga just nu."}</div>`;
@@ -427,29 +537,27 @@ function renderHolding() {
   } else if (!state.has_lots) {
     $("asof").textContent = `Senaste stängning ${s.as_of}`;
     top.innerHTML = `<div class="empty">Inga transaktioner registrerade än. Lägg till ditt första köp längst ner på sidan.<br>
-      Aktuell kurs: <b>${fmt(s.price, 2)} ${pc}</b> (${pct(s.day.price_pct)} senaste dagen)</div>`;
+      Aktuell kurs: <b>${fmt(s.price, 2)} ${pc}</b> (${pct(pp.price_pct)} ${lab})</div>`;
     kp.innerHTML = "";
   } else {
-    const d = s.day;
+    const d = s.day, dv = pp.value - s.value, gain = s.gain + dv, total = s.total + dv;   // dv: dagens rörelse sedan senaste dagskursen
     $("asof").textContent = `${fund ? "NAV" : "Stängningskurs"} ${s.as_of} (jämfört med ${s.prev}) · hämtad ${when(state.fetched_ts, fetched_at)} · nästa automatiska hämtning ${when(state.next_ts, state.next_update)}`;
     const fxNote = pc !== home;
     top.innerHTML = `
       <div class="sub">Värde av ditt innehav</div>
-      <div class="hero">${fmt(s.value)}<small>${home}</small></div>
-      <div class="delta ${cls(d.change)}">${arrow(d.change)} ${sgn(d.change)} ${home} (${pct(d.pct)}) ${fund ? "senaste NAV" : "senaste handelsdag"}</div>
-      ${fxNote ? `<div class="split">varav kurs ${sgn(d.price_effect)} ${home} · valuta ${sgn(d.fx_effect)} ${home}</div>` : ""}`;
+      <div class="hero">${fmt(pp.value)}<small>${home}</small></div>
+      <div class="delta ${cls(pp.change)}">${arrow(pp.change)} ${sgn(pp.change)} ${home} (${pct(pp.pct)}) ${hKey === "1d" && !fund ? "idag" : lab}</div>
+      ${fxNote && hKey === "1d" && !pp.intra ? `<div class="split">varav kurs ${sgn(d.price_effect)} ${home} · valuta ${sgn(d.fx_effect)} ${home}</div>` : ""}`;
     kp.innerHTML = [
-      ["Orealiserad vinst", `<span class="${cls(s.gain)}">${arrow(s.gain)} ${sgn(s.gain)} ${home}</span>`, pct(s.gain_pct) + " mot anskaffning"],
+      ["Orealiserad vinst", `<span class="${cls(gain)}">${arrow(gain)} ${sgn(gain)} ${home}</span>`, pct(s.cost ? gain / s.cost * 100 : null) + " mot anskaffning"],
       ["Realiserad vinst (sålt)", `<span class="${cls(s.realized)}">${arrow(s.realized)} ${sgn(s.realized)} ${home}</span>`, s.lots.some(l => l.type === "sell") ? "genomsnittsmetoden" : "inga sälj än"],
-      ["Totalt", `<span class="${cls(s.total)}">${arrow(s.total)} ${sgn(s.total)} ${home}</span>`, "orealiserat + realiserat"],
+      ["Totalt", `<span class="${cls(total)}">${arrow(total)} ${sgn(total)} ${home}</span>`, "orealiserat + realiserat"],
       [fund ? "Antal andelar" : "Antal aktier", fmt(s.shares, s.shares % 1 ? 3 : 0), `${s.buys} köp`],
-      priceKpi(s, d, pc, fund),
+      priceKpi(pp, pc, fund),
       ...(fxNote ? [[`${pc}/${home}`, fmt(s.fx, 4), `<span class="${cls(s.fx - s.prev_fx)}">${pct((s.fx / s.prev_fx - 1) * 100)}</span> ${dayLabel(s.as_of)}`]] : []),
       ["Anskaffningsvärde", `${fmt(s.cost)} ${home}`, s.avg_cost ? `${fmt(s.avg_cost, 1)} ${home} per ${fund ? "andel" : "aktie"}` : "inga andelar/aktier kvar"],
     ].map(([l, v, sub]) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${sub}</div></div>`).join("");
   }
-  renderLots(); drawHoldingChart(); renderHistTable(); renderNavs(); renderDaySignals();
-  if (!state.sigLoaded) { state.sigLoaded = true; loadSignals(false); }
 }
 
 /* klockslag i webbläsarens tidszon (inte serverns), så att det alltid stämmer med din klocka */
@@ -647,7 +755,7 @@ function updateChartMeta() {
     }
     lg.innerHTML = `<span><i></i>Värde (${esc(home)}, vänster skala)</span><span><i class="ref"></i>Anskaffningsvärde (kvarvarande)</span>` +
       `<span><i style="border-top-color:#d9822b"></i>Kurs per aktie (${esc(pc)}, höger skala)</span>`;
-    const vv = f && l && f.value > 0 ? ` · värde ${pct((l.value / f.value - 1) * 100)}` : "";
+    const pw = holdingPeriod(), vv = pw && pw.pct != null ? ` · värdeutveckling ${pct(pw.pct)} (köp och sälj under perioden borträknade)` : "";
     nt.textContent = (state.config.kind === "fund" ? "Ett värde per dag (fondens NAV)." : "Ett värde per handelsdag (stängningskurs).") +
       (f && l ? ` Senast ${fmt(l.price, 2)} ${pc}: ${pp} sedan ${f.d}${vv}. Valutan och antalet andelar/aktier ändras över tid, därför skiljer sig kurs- och värdelinjen åt.` : "");
   }
@@ -768,10 +876,9 @@ window.addEventListener("hashchange", () => show());
 
 $("ranges").addEventListener("click", async e => {
   const b = e.target.closest("button"); if (!b) return;
-  range = +b.dataset.r;
-  document.querySelectorAll("#ranges button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  setHKey(b.dataset.k);
   if (range === -1 && !(state.intraday && state.intraday.points)) await loadIntraday();
-  drawHoldingChart(); renderHistTable(); renderDaySignals();
+  renderHoldingTop(); drawHoldingChart(); renderHistTable(); renderDaySignals();
 });
 $("ivseg").addEventListener("click", async e => {
   const b = e.target.closest("button"); if (!b) return;
@@ -782,11 +889,61 @@ $("ivseg").addEventListener("click", async e => {
     document.querySelectorAll("#ivseg button").forEach(x => x.setAttribute("aria-pressed", x === b));
   } catch (x) { err.textContent = x.message; err.hidden = false; }
 });
-$("oranges").addEventListener("click", e => {
+$("operiods").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
-  oRange = +b.dataset.r;
-  document.querySelectorAll("#oranges button").forEach(x => x.setAttribute("aria-pressed", x === b));
-  drawOverviewChart();
+  setOKey(b.dataset.k);
+  renderOverview();
+});
+
+/* ---------------------------------------------------------------- inställningar */
+function renderSettings() {
+  const p = portfolio, pfs = p.portfolios, en = enabledPeriods();
+  $("pflist").innerHTML = pfs.map(x => `<div class="pfrow">
+      <input value="${esc(x.name)}" maxlength="40" data-id="${esc(x.id)}" aria-label="Namn på portföljen">
+      <span class="sub">${x.count} innehav</span>
+      <button class="btn" data-act="rename" data-id="${esc(x.id)}">Spara namn</button>
+      <button class="btn danger" data-act="del" data-id="${esc(x.id)}" ${x.count || pfs.length < 2 ? "disabled" : ""}
+        title="${x.count ? "Flytta eller ta bort innehaven först" : pfs.length < 2 ? "Du måste ha minst en portfölj" : "Ta bort portföljen"}">Ta bort</button>
+    </div>`).join("");
+  $("rangeopts").innerHTML = Object.keys(PERIODS).map(k =>
+    `<label class="chk"><input type="checkbox" data-k="${k}" ${en.includes(k) ? "checked" : ""}> ${esc(PERIODS[k][0])} <span class="sub">${esc(PERIODS[k][1])}</span></label>`).join("");
+  const iv = ["1m", "5m"].includes(p.config.intraday_interval) ? p.config.intraday_interval : "15m";
+  document.querySelectorAll("#ivseg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.iv === iv));
+}
+$("newpfform").addEventListener("submit", async e => {
+  e.preventDefault();
+  const err = $("pferr"); err.hidden = true;
+  try { const pf = await postJson("api/portfolios", {name: e.target.name.value}); e.target.reset(); curPf = pf.id; portfolio = null; location.hash = "#/p/" + pf.id; await show(); }
+  catch (x) { err.textContent = x.message; err.hidden = false; }
+});
+$("pflist").addEventListener("click", async e => {
+  const b = e.target.closest("button[data-act]"); if (!b) return;
+  const err = $("pferr"); err.hidden = true;
+  try {
+    if (b.dataset.act === "rename") {
+      const inp = document.querySelector(`#pflist input[data-id="${CSS.escape(b.dataset.id)}"]`);
+      await postJson("api/portfolios/" + encodeURIComponent(b.dataset.id) + "/name", {name: inp.value});
+    } else {
+      if (!confirm("Ta bort portföljen?")) return;
+      await api("api/portfolios/" + encodeURIComponent(b.dataset.id), {method: "DELETE"});
+      if (curPf === b.dataset.id) curPf = "";
+    }
+    portfolio = null; await show();
+  } catch (x) { err.textContent = x.message; err.hidden = false; }
+});
+$("rangeopts").addEventListener("change", async e => {
+  const err = $("rangeerr"); err.hidden = true;
+  const keys = [...document.querySelectorAll("#rangeopts input:checked")].map(i => i.dataset.k);
+  try {
+    const r = await postJson("api/settings", {ranges: keys});
+    portfolio.config.ranges = r.ranges;
+    if (!r.ranges.includes(oKey)) setOKey(r.ranges[0]);
+    if (state && !r.ranges.includes(hKey)) setHKey(r.ranges[0]);
+  } catch (x) { err.textContent = x.message; err.hidden = false; renderSettings(); }
+});
+$("pfmove").addEventListener("change", async e => {
+  try { await postJson("api/holdings/" + encodeURIComponent(state.config.id) + "/portfolio", {portfolio: e.target.value}); curPf = e.target.value; portfolio = null; await show(); }
+  catch (x) { alert(x.message); e.target.value = state.portfolio; }
 });
 
 $("lots").addEventListener("click", async e => {
@@ -833,7 +990,7 @@ $("addform").addEventListener("submit", async e => {
 $("delholding").addEventListener("click", async () => {
   const n = state.summary ? state.summary.lots.length : 0;
   if (!confirm(`Ta bort ${state.config.name} från portföljen${n ? ` och dess ${n} transaktioner` : ""}? Det går inte att ångra.`)) return;
-  try { await api("api/holdings/" + encodeURIComponent(state.config.id), {method: "DELETE"}); portfolio = null; location.hash = "#/"; await show(); }
+  try { await api("api/holdings/" + encodeURIComponent(state.config.id), {method: "DELETE"}); portfolio = null; location.hash = "#/p/" + (state.portfolio || ""); await show(); }
   catch (x) { alert(x.message); }
 });
 
@@ -841,7 +998,7 @@ $("delholding").addEventListener("click", async () => {
 async function addHolding(symbol, name) {
   const err = $("adderr"); err.hidden = true;
   try {
-    const h = await postJson("api/holdings", {symbol, name});
+    const h = await postJson("api/holdings", {symbol, name, portfolio: $("addpf").value});
     portfolio = null; location.hash = "#/h/" + h.id;
   } catch (x) { err.textContent = x.message; err.hidden = false; }
 }
@@ -867,7 +1024,7 @@ $("manualform").addEventListener("submit", async e => {
   e.preventDefault();
   const err = $("manualerr"); err.hidden = true;
   try {
-    const h = await postJson("api/holdings", Object.assign(Object.fromEntries(new FormData(e.target).entries()), {manual: true}));
+    const h = await postJson("api/holdings", Object.assign(Object.fromEntries(new FormData(e.target).entries()), {manual: true, portfolio: $("addpf").value}));
     portfolio = null; location.hash = "#/h/" + h.id;
   } catch (x) { err.textContent = x.message; err.hidden = false; }
 });

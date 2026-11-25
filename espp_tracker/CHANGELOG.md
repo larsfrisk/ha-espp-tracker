@@ -4,6 +4,11 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [2.8.2] - 2026-11-25
+
+### Ändrat
+- Rutan Aktiekurs på innehavets sida visar nu dagens förändring i både kronor och procent (t.ex. "+2,10 SEK (+1,27 %) idag · kl 17:25"), beräknad mot föregående stängning med dagens intradagsdata, alltså samma bas som diagrammet. Finns ingen intradagsdata används senaste dagskursen, och då anges datumet. Efter stängning visas "idag (stängd)".
+
 ## [2.8.1] - 2026-11-25
 
 ### Rättat

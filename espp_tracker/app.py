@@ -561,7 +561,32 @@ def _merge_histories(hists):
     return out
 
 
-def build_portfolio(refresh=False):
+def _apply_today(row, h, refresh):
+    """Byter dagskursens förändring mot förändringen hittills idag (intradagsdata mot föregående stängning)."""
+    if row["kind"] == "fund" or not row["has_prices"]:
+        return
+    try:
+        t = build_intraday(h, refresh)
+    except Exception:
+        return
+    pts = t.get("points") or []
+    if not pts or not (t.get("base_price") or 0) > 0:
+        return
+    last = pts[-1]
+    row["price"] = last["price"]
+    row["price_pct"] = (last["price"] / t["base_price"] - 1) * 100
+    row["today_date"] = t["date"]
+    row["today_live"] = bool(t.get("live"))
+    if row["has_lots"] and t.get("base_value"):
+        delta = last["value"] - row["value"]
+        row["value"] += delta; row["gain"] += delta; row["total"] += delta
+        row["gain_pct"] = row["gain"] / row["cost"] * 100 if row["cost"] else None
+        row["day_change"] = last["value"] - t["base_value"]
+        row["day_pct"] = row["day_change"] / t["base_value"] * 100
+        row["price_effect"] = row["day_change"]; row["fx_effect"] = 0.0
+
+
+def build_portfolio(refresh=False, today=False):
     cfg = load_config()
     rows, errors, hists, fetched, fetched_ts = [], [], [], [], []
     for h in load_holdings():
@@ -581,6 +606,8 @@ def build_portfolio(refresh=False):
                        price_pct=s["day"]["price_pct"], price=s["price"], fx=s["fx"], as_of=s["as_of"],
                        price_effect=s["day"]["price_effect"], fx_effect=s["day"]["fx_effect"])
             hists.append(s["history"])
+            if today:
+                _apply_today(row, h, refresh)
         rows.append(row)
     rows.sort(key=lambda r: -r["value"])
     tv = sum(r["value"] for r in rows)
@@ -908,7 +935,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, f.read(), "text/html; charset=utf-8")
         if path.path == "/api/portfolio":
             with LOCK:
-                return self._send(200, build_portfolio(refresh))
+                return self._send(200, build_portfolio(refresh, today=True))
         if path.path == "/api/search":
             q = (qs.get("q") or [""])[0]
             if len(q.strip()) < 2:

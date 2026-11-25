@@ -4,6 +4,12 @@ Alla märkbara ändringar i ESPP-tracker dokumenteras här. Formatet följer
 [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och versionerna följer
 [semantisk versionering](https://semver.org/lang/sv/).
 
+## [2.8.3] - 2026-11-25
+
+### Rättat
+- Översiktens kolumn "Idag" och procenten under aktiens namn visar nu förändringen hittills idag (senaste intradagskursen mot föregående stängning), både i kronor och procent. Tidigare byggde de på dagskurserna och kunde därför visa gårdagens eller förra veckans rörelse.
+- Värde, orealiserat resultat och totalerna på översikten räknas nu med den senaste intradagskursen, så att de stämmer med kolumnen Idag. Fonder påverkas inte (de har en kurs per dag).
+
 ## [2.8.2] - 2026-11-25
 
 ### Ändrat
